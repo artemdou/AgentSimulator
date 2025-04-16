@@ -79,7 +79,6 @@ def discover_simulation_parameters(df_train, df_test, df_val, data_dir, num_case
     simulation_parameters = determine_agent_behavior_type_and_extraneous_delays(simulation_parameters, df_train, df_val, case_arrival_times_val, central_orchestration, discover_extr_delays)
     simulation_parameters['start_timestamp'] = START_TIME
 
-
     return df_train, simulation_parameters
 
 def preprocess(df):

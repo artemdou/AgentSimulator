@@ -366,11 +366,9 @@ class ContractorAgent(Agent):
                 # next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
                 # change
                 if self.model.params.get('execution_type', 'original') == 'random':
-                    print(self.model.params.get('execution_type', 'original'))
                     possible_activities = [a for a in self.activities if a != 'zzz_end'] 
                     next_activity = random.choice(possible_activities)
                 else:
-                    print(self.model.params.get('execution_type', 'original'))
                     next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
 
 
@@ -402,11 +400,9 @@ class ContractorAgent(Agent):
                 # next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
                 # change
                 if self.model.params.get('execution_type', 'original') == 'random':
-                    print(self.model.params.get('execution_type', 'original'))
                     possible_activities = [a for a in self.activities if a != 'zzz_end'] 
                     next_activity = random.choice(possible_activities)
                 else:
-                    print(self.model.params.get('execution_type', 'original'))
                     next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
 
 

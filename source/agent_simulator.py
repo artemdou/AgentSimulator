@@ -21,12 +21,13 @@ class AgentSimulator:
             self.params['central_orchestration'],
             self.params['discover_extr_delays']
         )
+        self.simulation_parameters['execution_type'] = self.params['execution_type']
 
         # I commended out
         # print(f"agent to resource: {self.simulation_parameters['agent_to_resource']}")
 
-        # # simulate process
-        # simulate_process(self.df_train, self.simulation_parameters, self.data_dir, self.params['num_simulations'])
+        # simulate process
+        simulate_process(self.df_train, self.simulation_parameters, self.data_dir, self.params['num_simulations'])
 
     def _split_log(self):
         """
