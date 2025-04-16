@@ -69,6 +69,10 @@ class BusinessProcessModel(Model):
     def __init__(self, data, simulation_parameters):
         self.data = data
         self.resources = sorted(set(self.data['agent']))
+        self.params = simulation_parameters
+
+        # print(f"Params:{ self.params}")
+
         activities = sorted(set(self.data['activity_name']))
 
         self.roles = simulation_parameters['roles']

@@ -22,10 +22,11 @@ class AgentSimulator:
             self.params['discover_extr_delays']
         )
 
-        print(f"agent to resource: {self.simulation_parameters['agent_to_resource']}")
+        # I commended out
+        # print(f"agent to resource: {self.simulation_parameters['agent_to_resource']}")
 
-        # simulate process
-        simulate_process(self.df_train, self.simulation_parameters, self.data_dir, self.params['num_simulations'])
+        # # simulate process
+        # simulate_process(self.df_train, self.simulation_parameters, self.data_dir, self.params['num_simulations'])
 
     def _split_log(self):
         """

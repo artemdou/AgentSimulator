@@ -25,6 +25,9 @@ def parse_arguments():
 
     # Simulation parameters
     parser.add_argument('--num_simulations', type=int, default=10, help='Number of simulations to run')
+    parser.add_argument('--execution_type', choices=['random', 'original'], default='original',
+                    help="Execution mode: 'random' disables learned transition probabilities")
+
     
     args = parser.parse_args()
     return args
@@ -61,7 +64,8 @@ if __name__ == "__main__":
         'PATH_LOG_test': PATH_LOG_test,
         'train_and_test': train_and_test,
         'column_names': column_names,
-        'num_simulations': args.num_simulations
+        'num_simulations': args.num_simulations,
+        'execution_type': args.execution_type
     }
 
     simulator = AgentSimulator(params)

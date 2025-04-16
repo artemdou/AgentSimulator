@@ -22,12 +22,15 @@ def compute_activity_transition_dict_global(business_process_data):
 
     return dict_
 
-
+"""
+Purpose: to extract P(next_activity | prefix, previous_agent)
+"""
 def compute_activity_transition_dict(business_process_data):
     sequences, active_agents = create_sequences(business_process_data)
     sequence_parts, next_act, active_agent = create_labeled_sequences(sequences, active_agents)
 
     # Initialize a nested dictionary to store transition probabilities per agent
+    # nested dict of: prefix → agent → next activity → probability
     dict_ = {}
 
     for i in range(len(next_act)):

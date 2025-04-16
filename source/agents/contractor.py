@@ -361,7 +361,19 @@ class ContractorAgent(Agent):
                 activity_list = list(self.transition_probabilities[tuple(prefix)].keys())
                 probabilities = list(self.transition_probabilities[tuple(prefix)].values())
 
-                next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
+
+                # original
+                # next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
+                # change
+                if self.model.params.get('execution_type', 'original') == 'random':
+                    print(self.model.params.get('execution_type', 'original'))
+                    possible_activities = [a for a in self.activities if a != 'zzz_end'] 
+                    next_activity = random.choice(possible_activities)
+                else:
+                    print(self.model.params.get('execution_type', 'original'))
+                    next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
+
+
                 # # Sample an activity based on the probabilities
                 # while True:
                 #     # print(f"activity_list: {activity_list}")
@@ -385,9 +397,19 @@ class ContractorAgent(Agent):
                 activity_list = list(self.transition_probabilities[tuple(prefix)][self.case.previous_agent].keys())
                 
                 probabilities = list(self.transition_probabilities[tuple(prefix)][self.case.previous_agent].values())
-
-                next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
                 
+                # original
+                # next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
+                # change
+                if self.model.params.get('execution_type', 'original') == 'random':
+                    print(self.model.params.get('execution_type', 'original'))
+                    possible_activities = [a for a in self.activities if a != 'zzz_end'] 
+                    next_activity = random.choice(possible_activities)
+                else:
+                    print(self.model.params.get('execution_type', 'original'))
+                    next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
+
+
                 # # Sample an activity based on the probabilities
                 # time_0 = time.time()
                 # while True:
