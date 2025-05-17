@@ -66,58 +66,115 @@ def prepare_inputs(sim_param_path, raw_logs_path):
     return sim_params, agent_ids, durations, calendars, rules, xor, possible_cases
 
 
-def run_simulation(sim_param_path, raw_logs_path, max_cases=5, max_steps=100):
+# def run_simulation(sim_param_path, raw_logs_path, max_cases=5, max_steps=100):
+#     sim_params, agent_ids, durations, calendars, rules, xor, possible_cases = prepare_inputs(sim_param_path, raw_logs_path)
+    
+#     all_logs = []
+#     successful_cases = 0
+#     case_counter = 0
+    
+
+#     while (successful_cases < max_cases) and (case_counter <= possible_cases):
+#         print(f"\n🚀 Starting simulation for case {case_counter}")
+
+#         arrival_time = sim_params['case_arrival_times'][case_counter]
+#         case = Case(str(case_counter), arrival_time, xor_decisions={})
+#         case.performed = []
+#         case.current_time = arrival_time
+
+#         agents = []
+#         for agent_id in agent_ids:
+#             capable_acts = {
+#                 act for act, dist in durations[agent_id].items()
+#                 if dist and not isinstance(dist, list)
+#             }
+#             agents.append(Agent(agent_id, capable_activities=capable_acts, calendar=calendars[agent_id]))
+
+#         sim = Simulation(
+#             agents=agents,
+#             cases=[case],
+#             rules=rules,
+#             durations=durations,
+#             case_arrivals={str(case_counter): arrival_time}
+#         )
+
+#         step = 0
+#         while not case.done and step < max_steps:
+#             if not sim.tick(calendars):
+#                 print(f"⚠️ No activity executed at tick {step}, aborting case {case_counter}")
+#                 break
+#             step += 1
+
+#         if case.done:
+#             print(f"✅ Case {case_counter} completed successfully with {len(sim.log)} log entries.")
+#             all_logs.extend([entry.to_dict() for entry in sim.log])
+#             successful_cases += 1
+#         else:
+#             print(f"❌ Case {case_counter} did not complete. Retrying with new case.")
+
+#         print("Performed activities: ", case.performed)
+#         case_counter += 1
+
+#     df_simulated_log = pd.DataFrame(all_logs)
+#     print("\n✅ Simulation completed for all cases.")
+#     return df_simulated_log
+
+def run_simulation(sim_param_path, raw_logs_path, max_cases=5, max_steps=10000):
     sim_params, agent_ids, durations, calendars, rules, xor, possible_cases = prepare_inputs(sim_param_path, raw_logs_path)
-    
+
     all_logs = []
-    successful_cases = 0
-    case_counter = 0
-    
+    case_id = 0
 
-    while (successful_cases < max_cases) and (case_counter <= possible_cases):
-        print(f"\n🚀 Starting simulation for case {case_counter}")
+    # --- Step 1: Create shared Agent pool --- #
+    agents = []
+    for agent_id in agent_ids:
+        capable_acts = {
+            act for act, dist in durations[agent_id].items()
+            if dist and not isinstance(dist, list)
+        }
+        agent = Agent(agent_id, capable_activities=capable_acts, calendar=calendars[agent_id])
+        agent.available_at = pd.Timestamp.min.tz_localize("UTC")  # globally available from the start
+        agents.append(agent)
 
-        arrival_time = sim_params['case_arrival_times'][case_counter]
-        case = Case(str(case_counter), arrival_time, xor_decisions={})
+    # --- Step 2: Simulate each case one at a time --- #
+    for arrival_time in sim_params['case_arrival_times']:
+        if int(case_id) >= max_cases:
+            break
+
+        print(f"\n🚀 Starting simulation for case {case_id}")
+
+        case = Case(str(case_id), arrival_time, xor_decisions={})
         case.performed = []
         case.current_time = arrival_time
 
-        agents = []
-        for agent_id in agent_ids:
-            capable_acts = {
-                act for act, dist in durations[agent_id].items()
-                if dist and not isinstance(dist, list)
-            }
-            agents.append(Agent(agent_id, capable_activities=capable_acts, calendar=calendars[agent_id]))
-
         sim = Simulation(
-            agents=agents,
-            cases=[case],
+            agents=agents,  # shared across all cases
+            cases=[case],   # only simulate this case
             rules=rules,
             durations=durations,
-            case_arrivals={str(case_counter): arrival_time}
+            case_arrivals={str(case_id): arrival_time}
         )
 
         step = 0
         while not case.done and step < max_steps:
             if not sim.tick(calendars):
-                print(f"⚠️ No activity executed at tick {step}, aborting case {case_counter}")
+                print(f"⚠️ No activity executed at tick {step}, aborting case {case_id}")
                 break
             step += 1
 
         if case.done:
-            print(f"✅ Case {case_counter} completed successfully with {len(sim.log)} log entries.")
+            print(f"✅ Case {case_id} completed successfully with {len(sim.log)} log entries.")
             all_logs.extend([entry.to_dict() for entry in sim.log])
-            successful_cases += 1
         else:
-            print(f"❌ Case {case_counter} did not complete. Retrying with new case.")
+            print(f"❌ Case {case_id} did not complete. Retrying with new case.")
 
         print("Performed activities: ", case.performed)
-        case_counter += 1
+        case_id += 1
 
     df_simulated_log = pd.DataFrame(all_logs)
     print("\n✅ Simulation completed for all cases.")
     return df_simulated_log
+
 
 
 if __name__ == "__main__":

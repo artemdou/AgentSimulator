@@ -2,7 +2,7 @@ import random
 import pandas as pd
 from proposal import Proposal, LogEntry
 from activity_rules import ActivityRules
-from utils import sample_from_distribution
+from utils import sample_from_distribution, shift_activity_start_to_next_valid_window
 
 # Add project root to sys.path
 # import os
@@ -77,7 +77,14 @@ class Simulation:
                 if calendar is not None:
                     calendar_json = calendar.intervals_to_json()
                     if not self.is_within_calendar(start_time, duration, calendar_json):
-                        continue  # Skip proposals that violate calendar
+                        print(f"Violated calendar rules of agent {agent.agent_id} for time {start_time} to {start_time + pd.Timedelta(seconds=duration)}, agent seems available at {agent.available_at}")
+                        # ⏩ Try to shift the start time to next valid calendar slot
+                        new_start_time = shift_activity_start_to_next_valid_window(start_time, duration, calendar_json)
+                        if new_start_time is None:
+                            print(f"⚠️ Could not find a future shift for agent {agent.agent_id}. Skipping proposal.")
+                            continue
+                        print(f"⏩  Shifted activity start time to {new_start_time}")
+                        start_time = new_start_time
                 else:
                     print(f"Warning: No calendar found for agent {agent.agent_id}, assuming always available.")
                 proposals.append(Proposal(case, agent, act, start_time, duration))
@@ -254,6 +261,7 @@ class Simulation:
                 continue
             available_activities = case.get_available_activities(self.rules)
             print(f"Available activities: {available_activities}")
+            print(f"Current time {case.current_time}")
             for agent in self.agents:
                 proposals = self.make_proposals(agent, case, self.rules, self.durations, calendars, available_activities)
                 all_proposals.extend(proposals)
@@ -263,6 +271,7 @@ class Simulation:
         
         selected = self.select_proposal(all_proposals)
         print(f"Selected activity: {selected.activity} by agent {selected.agent.agent_id}")
+    
         self.perform_proposal(selected, self.rules)
        
         return True
