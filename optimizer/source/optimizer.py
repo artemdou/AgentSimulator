@@ -133,7 +133,7 @@ def run_simulation(sim_param_path, raw_logs_path, max_cases=5, max_steps=10000):
             if dist and not isinstance(dist, list)
         }
         agent = Agent(agent_id, capable_activities=capable_acts, calendar=calendars[agent_id])
-        agent.available_at = pd.Timestamp.min.tz_localize("UTC")  # globally available from the start
+        # agent.available_at = pd.Timestamp.min.tz_localize("UTC")  # globally available from the start
         agents.append(agent)
 
     # --- Step 2: Simulate each case one at a time --- #
