@@ -71,5 +71,23 @@ class Agent:
     def __init__(self, agent_id, capable_activities, calendar):
         self.agent_id = agent_id
         self.capable_activities = set(capable_activities)
-        self.available_at = pd.Timestamp.min.replace(tzinfo=pytz.UTC)  # updated as tasks are performed
+        self.busy_windows = []
+        # self.available_at = pd.Timestamp.min.replace(tzinfo=pytz.UTC)  # updated as tasks are performed
         self.calendar = calendar
+
+    def is_available_at(self, time):
+        """
+        Checks whether the agent is available at a specific timestamp.
+        
+        Parameters:
+        - time: pd.Timestamp to check
+
+        Returns:
+        - True if the agent is free at that time
+        - False if the agent is currently busy
+        """
+
+        for start, end in self.busy_windows:
+            if start <= time < end:
+                return False
+        return True

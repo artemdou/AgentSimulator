@@ -2,7 +2,7 @@ from collections import defaultdict
 import pandas as pd
 import math
 import scipy.stats as st
-from collections import defaultdict
+from datetime import datetime, timedelta
 
 def sample_from_distribution(distribution):
     """
@@ -231,6 +231,54 @@ def discover_prerequisites_from_log(df, activity_col='activity', case_col='case_
 
     strict_prerequisites = remove_transitive(raw_prerequisites)
     return strict_prerequisites
+
+
+
+def shift_activity_start_to_next_valid_window(start_time: pd.Timestamp, duration: float, calendar_json: list, max_days = 3,  step = timedelta(days=1)) -> pd.Timestamp:
+    """
+    Shift the activity start time forward to the beginning of the next available calendar window (shift)
+    where the full activity duration fits.
+
+    Parameters:
+    - start_time: Proposed start time that violated the current calendar window
+    - duration: Activity duration in seconds
+    - calendar_json: List of weekly calendar windows from RCalendar.intervals_to_json()
+    - max_days: Max days the function will check forward to avoid infinite loops. Defaults to 3 to account for weekends.
+    - steps: how much afterwards the function skips to (made to work with days)
+
+    Returns:
+    - A new pd.Timestamp at the start of a valid calendar window, or None if no window is found
+
+    Notes:
+    - Assumes all calendar windows are same-week recurring (i.e., a 7-day schedule)
+    - Made to work with calendars with one shift per day
+    - Skips over malformed time strings silently
+    """
+
+    for offset in range(1, max_days + 1):
+        future_day = start_time + offset * step
+        day_name = future_day.strftime('%A').upper()
+
+        for entry in calendar_json:
+            if entry['from'] != day_name:
+                continue
+
+            try:
+                shift_start_time = datetime.strptime(entry['beginTime'], '%H:%M:%S').time()
+                shift_end_time = datetime.strptime(entry['endTime'], '%H:%M:%S').time()
+            except ValueError as ve:
+                print(f"⚠️ Malformed calendar entry: {ve}")
+                continue
+
+            proposed_start = datetime.combine(future_day.date(), shift_start_time).replace(tzinfo=start_time.tzinfo)
+            proposed_end = proposed_start + timedelta(seconds=duration)
+
+            # Only accept if it fits entirely in the shift window
+            if proposed_end.time() <= shift_end_time:
+                return pd.Timestamp(proposed_start)
+
+    return None  # No valid window found
+
 
 
 def validate_simulated_log(df, prerequisites, post_conditions, valid_end_activities, 

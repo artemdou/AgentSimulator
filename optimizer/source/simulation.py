@@ -2,7 +2,7 @@ import random
 import pandas as pd
 from proposal import Proposal, LogEntry
 from activity_rules import ActivityRules
-from utils import sample_from_distribution
+from utils import sample_from_distribution, shift_activity_start_to_next_valid_window
 
 # Add project root to sys.path
 # import os
@@ -47,40 +47,58 @@ class Simulation:
         - No cost or optimization logic is applied yet.
         
         Limitations / TODOs:
-        - Doesn’t handle fallback logic if activity doesn't fit in calendar (e.g., shifting start time).
         - Doesn’t yet consider multitasking or interruptions.
         """
 
-        proposals = []  
-        # if 'Check credit history' in available_activities:
-        #     available_activities.remove('Check credit history')  
-        # if 'Appraise property' in available_activities:
-        #     available_activities.remove('Appraise property')  
-        # if 'AML check' in available_activities:
-        #     available_activities.remove('AML check')  
+        proposals = []
+
         for act in available_activities:
-            if act in agent.capable_activities:
-                if not rules.is_activity_allowed(act, case):
+            if act not in agent.capable_activities:
+                continue
+            if not rules.is_activity_allowed(act, case):
+                continue
+
+            try:
+                dist = durations[agent.agent_id][act]
+                if not dist:
                     continue
-                try:
-                    dist = durations[agent.agent_id][act]
-                    if not dist:  # Skip empty distributions
-                        continue
-                    duration = sample_from_distribution(dist)
-                except (KeyError, AttributeError):
-                    continue  # Duration missing or malformed
+                duration = sample_from_distribution(dist)
+            except (KeyError, AttributeError):
+                continue
 
-                start_time = max(agent.available_at, case.current_time)
+            # Start checking from current case time
+            candidate_start = case.current_time
+            calendar = calendars.get(agent.agent_id)
+            calendar_json = calendar.intervals_to_json() if calendar else None
 
-                # ✅ Check calendar constraints before proposing
-                calendar = calendars.get(agent.agent_id, None)
-                if calendar is not None:
-                    calendar_json = calendar.intervals_to_json()
-                    if not self.is_within_calendar(start_time, duration, calendar_json):
-                        continue  # Skip proposals that violate calendar
-                else:
-                    print(f"Warning: No calendar found for agent {agent.agent_id}, assuming always available.")
-                proposals.append(Proposal(case, agent, act, start_time, duration))
+            while True:
+                # Step 1: Check for overlap with busy windows
+                overlaps = any(
+                    start < candidate_start + pd.Timedelta(seconds=duration) and
+                    candidate_start < end
+                    for start, end in agent.busy_windows
+                )
+                if overlaps:
+                    for start, end in sorted(agent.busy_windows):
+                        if candidate_start < end and candidate_start + pd.Timedelta(seconds=duration) > start:
+                            candidate_start = end
+                            break
+                    continue  # Loop back with updated time
+
+                # Step 2: Check calendar compliance
+                if calendar_json:
+                    if not self.is_within_calendar(candidate_start, duration, calendar_json):
+                        shifted = shift_activity_start_to_next_valid_window(candidate_start, duration, calendar_json)
+                        if shifted is None:
+                            candidate_start = None
+                            break
+                        candidate_start = shifted
+                        continue  # Need to recheck for busy conflict
+
+                break  # If we pass both checks
+
+            if candidate_start is not None:
+                proposals.append(Proposal(case, agent, act, candidate_start, duration))
 
         return proposals
 
@@ -198,8 +216,8 @@ class Simulation:
         # 2. Mark activity as done
         case.performed.append(activity)
 
-        # 3. Update agent's availability
-        agent.available_at = proposal.end_time
+        # 3. Register the agent as busy during this interval
+        agent.busy_windows.append((proposal.start_time, proposal.end_time))
 
         # 4. Add post-condition obligations
         for post_act in rules.post_conditions.get(activity, []):
@@ -254,6 +272,7 @@ class Simulation:
                 continue
             available_activities = case.get_available_activities(self.rules)
             print(f"Available activities: {available_activities}")
+            print(f"Current time {case.current_time}")
             for agent in self.agents:
                 proposals = self.make_proposals(agent, case, self.rules, self.durations, calendars, available_activities)
                 all_proposals.extend(proposals)
@@ -263,6 +282,7 @@ class Simulation:
         
         selected = self.select_proposal(all_proposals)
         print(f"Selected activity: {selected.activity} by agent {selected.agent.agent_id}")
+    
         self.perform_proposal(selected, self.rules)
        
         return True
