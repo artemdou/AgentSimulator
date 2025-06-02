@@ -1,8 +1,9 @@
 import random
 import pandas as pd
+import numpy as np
 from proposal import Proposal, LogEntry
 from activity_rules import ActivityRules
-from utils import sample_from_distribution, shift_activity_start_to_next_valid_window
+from utils import sample_from_distribution, shift_activity_start_to_next_valid_window, compute_transition_weight
 
 # Add project root to sys.path
 # import os
@@ -11,13 +12,16 @@ from utils import sample_from_distribution, shift_activity_start_to_next_valid_w
 # from source.utils import sample_from_distribution
 
 class Simulation:
-    def __init__(self, agents, cases, rules, durations, case_arrivals):
+    def __init__(self, agents, cases, rules, durations, case_arrivals, is_orchestrated, transition_probabilities, agent_transition_probabilities):
         self.agents = agents
         self.cases = cases
         self.rules = rules
         self.durations = durations
         self.case_arrivals = case_arrivals
         self.log = []
+        self.is_orchestrated = is_orchestrated
+        self.transition_probabilities = transition_probabilities
+        self.agent_transition_probabilities = agent_transition_probabilities
 
     def make_proposals(self, agent, case, rules: ActivityRules, durations: dict, calendars: dict, available_activities: list):
         """
@@ -149,44 +153,86 @@ class Simulation:
 
     
     # place holder
+    # def select_proposal(self, proposals: list) -> Proposal:
+    #     """
+    #     Select one proposal with weighted random logic:
+    #     - Boosts proposals that fulfill obligations
+    #     - Penalizes proposals that repeat the case's last activity
+
+    #     Returns:
+    #     - A single Proposal object
+    #     """
+
+    #     if not proposals:
+    #         return None
+
+    #     weights = []
+    #     for p in proposals:
+    #         weight = 1.0
+
+    #         # 📌 Boost if it's an obligation
+    #         if p.activity in p.case.outstanding_obligations:
+    #             weight *= 10  # Total = 10
+
+    #         # 🚫 Penalize if it's an immediate repeat
+    #         elif len(p.case.performed) > 0 and p.activity == p.case.performed[-1]:
+    #             weight *= 0.01  # 90% penalty, Total = 0.1
+            
+    #         else:
+    #             weight *= 0.05
+
+    #         weights.append(weight)
+
+            
+
+    #     # for p, w in zip(proposals, weights):
+    #         # print(f"Weighted option: {p.activity} by {p.agent.agent_id} → weight {w}")
+
+        
+    #     return random.choices(proposals, weights=weights, k=1)[0]
+
+
     def select_proposal(self, proposals: list) -> Proposal:
-        """
-        Select one proposal with weighted random logic:
-        - Boosts proposals that fulfill obligations
-        - Penalizes proposals that repeat the case's last activity
-
-        Returns:
-        - A single Proposal object
-        """
-
         if not proposals:
             return None
 
         weights = []
         for p in proposals:
-            weight = 1.0
-
-            # 📌 Boost if it's an obligation
-            if p.activity in p.case.outstanding_obligations:
-                weight *= 10  # Total = 10
-
-            # 🚫 Penalize if it's an immediate repeat
-            elif len(p.case.performed) > 0 and p.activity == p.case.performed[-1]:
-                weight *= 0.01  # 90% penalty, Total = 0.1
-            
+            performed_activities = p.case.performed
+            if p.case.agent_pairing:
+                last_agent = p.case.agent_pairing[-1].agent_id
+                proposed_activity = p.activity
+                proposal_agent = p.agent.agent_id
+                weight = compute_transition_weight(
+                    performed_activities, 
+                    last_agent, 
+                    self.transition_probabilities, 
+                    self.agent_transition_probabilities, 
+                    self.is_orchestrated,
+                    proposal_agent,
+                    proposed_activity
+                )
             else:
-                weight *= 0.05
+                weight = 0.0
 
+            if weight == 1:
+                weight = weight * 100
+    
             weights.append(weight)
 
-            
+        # fallback logic if none of the proposals could get a weight
+        if np.array(weights).sum() == 0:
+            weights = np.array(weights) + 0.001
+            weights = weights.tolist()
+
 
         # for p, w in zip(proposals, weights):
-            # print(f"Weighted option: {p.activity} by {p.agent.agent_id} → weight {w}")
+        #     print(f"Weighted option: {p.activity} by {p.agent.agent_id} → weight {w}")
 
         
         return random.choices(proposals, weights=weights, k=1)[0]
-
+       
+        
 
 
     def perform_proposal(self, proposal: Proposal, rules: ActivityRules):
@@ -215,6 +261,8 @@ class Simulation:
 
         # 2. Mark activity as done
         case.performed.append(activity)
+        case.agent_pairing.append(agent)
+        case.allowed_activity_number[activity] = case.allowed_activity_number[activity] - 1
 
         # 3. Register the agent as busy during this interval
         agent.busy_windows.append((proposal.start_time, proposal.end_time))
@@ -238,12 +286,12 @@ class Simulation:
 
         
         # 8. Lock XOR decision if needed
-        for anchor, groups in rules.xor_rules.items():
-            for group_index, group in enumerate(groups):
-                if activity in group:
-                    case.xor_windows.setdefault(anchor, []).append(group_index)
-                    print(f"📌 XOR decision made: {anchor} → group {group_index}")
-                    break
+        # for anchor, groups in rules.xor_rules.items():
+        #     for group_index, group in enumerate(groups):
+        #         if activity in group:
+        #             case.xor_windows.setdefault(anchor, []).append(group_index)
+        #             # print(f"📌 XOR decision made: {anchor} → group {group_index}")
+        #             break
 
 
     
@@ -277,13 +325,13 @@ class Simulation:
                 proposals = self.make_proposals(agent, case, self.rules, self.durations, calendars, available_activities)
                 all_proposals.extend(proposals)
 
-        if not all_proposals:
-            return False
+            if not all_proposals:
+                return False
+            
+            selected = self.select_proposal(all_proposals)
+            print(f"Selected activity: {selected.activity} by agent {selected.agent.agent_id}")
         
-        selected = self.select_proposal(all_proposals)
-        print(f"Selected activity: {selected.activity} by agent {selected.agent.agent_id}")
-    
-        self.perform_proposal(selected, self.rules)
+            self.perform_proposal(selected, self.rules)
        
         return True
 

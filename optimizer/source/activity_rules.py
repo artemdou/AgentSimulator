@@ -30,7 +30,7 @@ class ActivityRules:
     #         a for a in self.prerequisites
     #         if all(p in performed for p in self.prerequisites.get(a, []))
     #     ]
-    def get_available_activities(self, performed, xor_windows):
+    def get_available_activities(self, performed, xor_windows, allowed_activity_number):
         """
         Returns a list of activities that can currently be executed,
         based on prerequisites and XOR group constraints.
@@ -52,7 +52,11 @@ class ActivityRules:
             if not all(p in performed for p in self.prerequisites.get(activity, [])):
                 continue
 
-            # 2. XOR validation (if activity is governed by XOR rules)
+            # 2. Max allowed activity check
+            if allowed_activity_number[activity] <=0:
+                continue
+
+            # 3 2. XOR validation (if activity is governed by XOR rules)
             xor_valid = True
             for anchor, groups in self.xor_rules.items():
                 for group_index, group in enumerate(groups):

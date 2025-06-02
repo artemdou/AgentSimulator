@@ -16,11 +16,13 @@ class Case:
         * outstanding_obligations.
     """
     
-    def __init__(self, case_id, arrival_time, xor_decisions):
+    def __init__(self, case_id, arrival_time, allowed_activity_mapping, xor_decisions):
         self.case_id = case_id
         self.current_time = arrival_time
         self.performed = []
+        self.agent_pairing = []
         self.outstanding_obligations = []
+        self.allowed_activity_number = allowed_activity_mapping
         self.done = False
         self.xor_decisions = xor_decisions
 
@@ -34,7 +36,7 @@ class Case:
         Logic found in ActivityRules class
         """
 
-        all_available = rules.get_available_activities(self.performed, self.xor_windows)
+        all_available = rules.get_available_activities(self.performed, self.xor_windows, self.allowed_activity_number)
 
         # Sort so obligations come first, preserving order
         prioritized = [a for a in self.outstanding_obligations if a in all_available]

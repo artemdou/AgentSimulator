@@ -60,10 +60,11 @@ def prepare_inputs(sim_param_path, raw_logs_path):
     agent_ids = list(sim_params['activity_durations_dict'].keys())
     durations = sim_params['activity_durations_dict']
     calendars = sim_params['res_calendars']
+    allowed_activity_mapping = sim_params['max_activity_count_per_case']
 
     possible_cases = len(sim_params['case_arrival_times']) - 1
 
-    return sim_params, agent_ids, durations, calendars, rules, xor, possible_cases
+    return sim_params, agent_ids, durations, calendars, rules, allowed_activity_mapping, xor, possible_cases
 
 
 # def run_simulation(sim_param_path, raw_logs_path, max_cases=5, max_steps=100):
@@ -120,7 +121,7 @@ def prepare_inputs(sim_param_path, raw_logs_path):
 #     return df_simulated_log
 
 def run_simulation(sim_param_path, raw_logs_path, max_cases=5, max_steps=10000):
-    sim_params, agent_ids, durations, calendars, rules, xor, possible_cases = prepare_inputs(sim_param_path, raw_logs_path)
+    sim_params, agent_ids, durations, calendars, rules, allowed_activity_mapping, xor, possible_cases = prepare_inputs(sim_param_path, raw_logs_path)
 
     all_logs = []
     case_id = 0
@@ -143,7 +144,7 @@ def run_simulation(sim_param_path, raw_logs_path, max_cases=5, max_steps=10000):
 
         print(f"\n🚀 Starting simulation for case {case_id}")
 
-        case = Case(str(case_id), arrival_time, xor_decisions={})
+        case = Case(str(case_id), arrival_time, allowed_activity_mapping.copy(), xor_decisions={})
         case.performed = []
         case.current_time = arrival_time
 
@@ -152,7 +153,10 @@ def run_simulation(sim_param_path, raw_logs_path, max_cases=5, max_steps=10000):
             cases=[case],   # only simulate this case
             rules=rules,
             durations=durations,
-            case_arrivals={str(case_id): arrival_time}
+            case_arrivals={str(case_id): arrival_time},
+            is_orchestrated = sim_params['central_orchestration'],
+            transition_probabilities = sim_params['transition_probabilities'],
+            agent_transition_probabilities = sim_params['agent_transition_probabilities']
         )
 
         step = 0
