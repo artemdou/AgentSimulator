@@ -280,6 +280,44 @@ def shift_activity_start_to_next_valid_window(start_time: pd.Timestamp, duration
     return None  # No valid window found
 
 
+def compute_transition_weight(
+    performed: list[str],
+    last_agent: int,
+    transition_probabilities: dict,
+    agent_transition_probabilities: dict,
+    is_orchestrated: float,
+    proposal_agent: int,
+    activity: str,
+) -> float:
+    """
+    Weights regarding historic behavior:
+    - If the process is autonomous then we only need the agent_transition_probabilities
+    - If the process is orchestrated then we need to use transition_probabilities
+
+    Weights regarding optimization:
+    - tbd
+
+    Returns:
+    - joint_waigt: float
+    """
+    if not performed:
+        return 0.0  # First activity → no context for prediction
+    
+    if is_orchestrated:
+        prefix = tuple(performed)
+        # P(activity | prefix, agent)
+        agent_sim_weight = transition_probabilities.get(prefix, {}).get(proposal_agent, {})
+    else:
+        last_activity = performed[-1]
+        # P(agent, activity | last_agent, last_activity)
+        agent_sim_weight = agent_transition_probabilities.get(last_agent, {}).get(last_activity, {}).get(proposal_agent, {}).get(activity, 0.0)
+        # if last_activity == 'Check application form completeness':
+        #     print("last_activity 'Check application form completeness")
+        #     print(activity, proposal_agent, agent_sim_weight)
+
+    transition_weight = agent_sim_weight
+    
+    return transition_weight
 
 def validate_simulated_log(df, prerequisites, post_conditions, valid_end_activities, 
                             case_col='case_id', activity_col='activity', order_by='start'):
