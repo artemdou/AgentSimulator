@@ -93,3 +93,35 @@ class Agent:
             if start <= time < end:
                 return False
         return True
+    
+    def get_next_availability(self, after_time):
+        """
+        Returns the next timestamp after `after_time` when the agent is available,
+        respecting both busy windows and calendar constraints.
+
+        Parameters:
+        - after_time: pd.Timestamp to start searching from
+
+        Returns:
+        - pd.Timestamp of next available moment
+        """
+        # Sort the busy windows and calendar for consistency
+        self.busy_windows.sort()
+        self.calendar.sort()
+
+        for work_start, work_end in self.calendar:
+            # Skip calendar windows before the requested time
+            if work_end <= after_time:
+                continue
+
+            # Determine the actual search start time
+            current_time = max(after_time, work_start)
+
+            while current_time < work_end:
+                if self.is_available_at(current_time):
+                    return current_time
+                # Advance time by smallest practical resolution (e.g., 1 minute)
+                current_time += pd.Timedelta(minutes=1)
+
+        # If no availability is found
+        return None

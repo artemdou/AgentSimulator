@@ -304,16 +304,42 @@ def compute_transition_weight(
         return 0.0  # First activity → no context for prediction
     
     if is_orchestrated:
+        # not 100% correct
         prefix = tuple(performed)
         # P(activity | prefix, agent)
         agent_sim_weight = transition_probabilities.get(prefix, {}).get(proposal_agent, {})
     else:
-        last_activity = performed[-1]
+        # last_activity = performed[-1]
         # P(agent, activity | last_agent, last_activity)
-        agent_sim_weight = agent_transition_probabilities.get(last_agent, {}).get(last_activity, {}).get(proposal_agent, {}).get(activity, 0.0)
+        # agent_sim_weight = agent_transition_probabilities.get(last_agent, {}).get(last_activity, {}).get(proposal_agent, {}).get(activity, 0.0)
         # if last_activity == 'Check application form completeness':
         #     print("last_activity 'Check application form completeness")
         #     print(activity, proposal_agent, agent_sim_weight)
+
+    # transition_weight = agent_sim_weight
+            # this might not be optimal, subject to experimentation
+            prefix = tuple(performed)
+            activity_prob = 0.0
+
+            # 1. Activity prediction based on prefix + last agent
+            while prefix:
+                if prefix in transition_probabilities and last_agent in transition_probabilities[prefix]:
+                    activity_prob = transition_probabilities[prefix][last_agent].get(activity, 0.0)
+                    break
+                prefix = prefix[1:]
+
+            # 2. Agent prediction based on last_agent → last_activity → next_agent → next_activity
+            last_activity = performed[-1]
+            agent_prob = (
+                agent_transition_probabilities
+                .get(last_agent, {})
+                .get(last_activity, {})
+                .get(proposal_agent, {})
+                .get(activity, 0.0)
+            )
+
+            # Combine both (e.g. multiply)
+            agent_sim_weight = activity_prob * agent_prob
 
     transition_weight = agent_sim_weight
     
