@@ -55,6 +55,7 @@ class ActivityRules:
             # 2. Max allowed activity check
             if allowed_activity_number[activity] <=0:
                 continue
+        
 
             # 3 2. XOR validation (if activity is governed by XOR rules)
             xor_valid = True

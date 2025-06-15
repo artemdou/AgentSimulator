@@ -4,6 +4,7 @@ import numpy as np
 from proposal import Proposal, LogEntry
 from activity_rules import ActivityRules
 from utils import sample_from_distribution, shift_activity_start_to_next_valid_window, compute_transition_weight
+from datetime import datetime, timezone
 
 # Add project root to sys.path
 # import os
@@ -197,42 +198,50 @@ class Simulation:
             return None
 
         weights = []
-        for p in proposals:
-            performed_activities = p.case.performed
-            if p.case.agent_pairing:
-                last_agent = p.case.agent_pairing[-1].agent_id
-                proposed_activity = p.activity
-                proposal_agent = p.agent.agent_id
-                weight = compute_transition_weight(
-                    performed_activities, 
-                    last_agent, 
-                    self.transition_probabilities, 
-                    self.agent_transition_probabilities, 
-                    self.is_orchestrated,
-                    proposal_agent,
-                    proposed_activity
-                )
-            else:
-                weight = 0.0
+        max_weight = 0
+        selected_activity = None
 
-            if weight == 1:
-                weight = weight * 100
-    
+        for p in proposals:
+            performed_activites = p.case.performed
+            if performed_activites:
+                prefix = tuple(performed_activites)
+                proposed_activity = p.activity
+
+                subdict = self.transition_probabilities[prefix]
+                probs = [v.get(proposed_activity, 0.0) for v in subdict.values()]
+                weight = sum(probs) / len(probs)
+
+                if weight == 1:
+                    weight = weight * 100
+
+                if weight >= max_weight:
+                    max_weight = weight
+                    selected_activity = proposed_activity
+            else:
+                weight = 0
+
             weights.append(weight)
+                
 
         # fallback logic if none of the proposals could get a weight
         if np.array(weights).sum() == 0:
             weights = np.array(weights) + 0.001
             weights = weights.tolist()
 
-
-        # for p, w in zip(proposals, weights):
-        #     print(f"Weighted option: {p.activity} by {p.agent.agent_id} → weight {w}")
-
+        selected_activity = random.choices(proposals, weights=weights, k=1)[0].activity
+        print("Pre-selection:", selected_activity)
         
-        return random.choices(proposals, weights=weights, k=1)[0]
-       
-        
+        min_end_time = datetime.max.replace(tzinfo=timezone.utc)
+        i = -1
+        for p in proposals:
+            if selected_activity:
+                if p.activity != selected_activity:
+                    continue
+            if p.end_time <= min_end_time:
+                min_end_time = p.end_time
+                i = proposals.index(p) 
+
+        return proposals[i]
 
 
     def perform_proposal(self, proposal: Proposal, rules: ActivityRules):
