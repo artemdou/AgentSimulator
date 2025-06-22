@@ -156,12 +156,17 @@ def run_simulation(sim_param_path, raw_logs_path, max_cases=5, max_steps=10000):
             case_arrivals={str(case_id): arrival_time},
             is_orchestrated = sim_params['central_orchestration'],
             transition_probabilities = sim_params['transition_probabilities'],
-            agent_transition_probabilities = sim_params['agent_transition_probabilities']
+            agent_transition_probabilities = sim_params['agent_transition_probabilities'],
+            activity_durations = sim_params['activity_durations_dict']
         )
 
         step = 0
         while not case.done and step < max_steps:
-            if not sim.tick(calendars):
+            # if not sim.tick(calendars):
+            #     print(f"⚠️ No activity executed at tick {step}, aborting case {case_id}")
+            #     break
+
+            if not sim.local_mcts_tick(calendars=calendars):
                 print(f"⚠️ No activity executed at tick {step}, aborting case {case_id}")
                 break
             step += 1

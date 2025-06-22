@@ -18,6 +18,7 @@ class Case:
     
     def __init__(self, case_id, arrival_time, allowed_activity_mapping, xor_decisions):
         self.case_id = case_id
+        self.start_time = arrival_time
         self.current_time = arrival_time
         self.performed = []
         self.agent_pairing = []

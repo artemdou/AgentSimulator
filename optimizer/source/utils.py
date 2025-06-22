@@ -40,6 +40,37 @@ def sample_from_distribution(distribution):
 
     return sample[0]
 
+
+def get_activity_duration(agent, activity, activity_durations):
+    activity_distribution = activity_durations[agent][activity]
+    if activity_distribution.type.value == "expon":
+        scale = activity_distribution.mean - activity_distribution.min
+        if scale < 0.0:
+            print("Warning! Trying to generate EXPON sample with 'mean' < 'min', using 'mean' as scale value.")
+            scale = activity_distribution.mean
+        activity_duration = st.expon.rvs(loc=activity_distribution.min, scale=scale, size=1)[0]
+    elif activity_distribution.type.value == "gamma":
+        activity_duration = st.gamma.rvs(
+            pow(activity_distribution.mean, 2) / activity_distribution.var,
+            loc=0,
+            scale=activity_distribution.var / activity_distribution.mean,
+            size=1,
+        )[0]
+    elif activity_distribution.type.value == "norm":
+        activity_duration = st.norm.rvs(loc=activity_distribution.mean, scale=activity_distribution.std, size=1)[0]
+    elif activity_distribution.type.value == "uniform":
+        activity_duration = st.uniform.rvs(loc=activity_distribution.min, scale=activity_distribution.max - activity_distribution.min, size=1)[0]
+    elif activity_distribution.type.value == "lognorm":
+        pow_mean = pow(activity_distribution.mean, 2)
+        phi = math.sqrt(activity_distribution.var + pow_mean)
+        mu = math.log(pow_mean / phi)
+        sigma = math.sqrt(math.log(phi ** 2 / pow_mean))
+        activity_duration = st.lognorm.rvs(sigma, loc=0, scale=math.exp(mu), size=1)[0]
+    elif activity_distribution.type.value == "fix":
+        activity_duration = activity_distribution.mean
+
+    return activity_duration
+
 def remove_transitive_response_constraints(response_constraints):
     cleaned = {}
 

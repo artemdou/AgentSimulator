@@ -1,9 +1,12 @@
 import random
 import pandas as pd
 import numpy as np
+from copy import deepcopy
 from proposal import Proposal, LogEntry
 from activity_rules import ActivityRules
-from utils import sample_from_distribution, shift_activity_start_to_next_valid_window, compute_transition_weight
+from utils import get_activity_duration, sample_from_distribution, shift_activity_start_to_next_valid_window, compute_transition_weight
+
+from local_mcts import mcts_select
 
 # Add project root to sys.path
 # import os
@@ -12,7 +15,7 @@ from utils import sample_from_distribution, shift_activity_start_to_next_valid_w
 # from source.utils import sample_from_distribution
 
 class Simulation:
-    def __init__(self, agents, cases, rules, durations, case_arrivals, is_orchestrated, transition_probabilities, agent_transition_probabilities):
+    def __init__(self, agents, cases, rules, durations, case_arrivals, is_orchestrated, transition_probabilities, agent_transition_probabilities, activity_durations):
         self.agents = agents
         self.cases = cases
         self.rules = rules
@@ -22,6 +25,7 @@ class Simulation:
         self.is_orchestrated = is_orchestrated
         self.transition_probabilities = transition_probabilities
         self.agent_transition_probabilities = agent_transition_probabilities
+        self.activity_durations = activity_durations
 
     def make_proposals(self, agent, case, rules: ActivityRules, durations: dict, calendars: dict, available_activities: list):
         """
@@ -53,7 +57,7 @@ class Simulation:
         Limitations / TODOs:
         - Doesn’t yet consider multitasking or interruptions.
         """
-
+    
         proposals = []
 
         for act in available_activities:
@@ -63,11 +67,9 @@ class Simulation:
                 continue
 
             try:
-                dist = durations[agent.agent_id][act]
-                if not dist:
-                    continue
-                duration = sample_from_distribution(dist)
-            except (KeyError, AttributeError):
+                duration = get_activity_duration(agent.agent_id, act, self.activity_durations)
+            except (KeyError, AttributeError) as e:
+                print(e)
                 continue
 
             # Start checking from current case time
@@ -192,6 +194,49 @@ class Simulation:
     #     return random.choices(proposals, weights=weights, k=1)[0]
 
 
+    # def select_proposal(self, proposals: list) -> Proposal:
+    #     if not proposals:
+    #         return None
+
+    #     weights = []
+    #     for p in proposals:
+    #         performed_activities = p.case.performed
+    #         if p.case.agent_pairing:
+    #             last_agent = p.case.agent_pairing[-1].agent_id
+    #             proposed_activity = p.activity
+    #             proposal_agent = p.agent.agent_id
+    #             weight = compute_transition_weight(
+    #                 performed_activities, 
+    #                 last_agent, 
+    #                 self.transition_probabilities, 
+    #                 self.agent_transition_probabilities, 
+    #                 self.is_orchestrated,
+    #                 proposal_agent,
+    #                 proposed_activity
+    #             )
+    #         else:
+    #             weight = 0.0
+
+    #         if weight == 1:
+    #             weight = weight * 100
+    
+    #         weights.append(weight)
+
+    #     # fallback logic if none of the proposals could get a weight
+    #     if np.array(weights).sum() == 0:
+    #         weights = np.array(weights) + 0.001
+    #         weights = weights.tolist()
+
+
+    #     # for p, w in zip(proposals, weights):
+    #     #     print(f"Weighted option: {p.activity} by {p.agent.agent_id} → weight {w}")
+
+        
+    #     return random.choices(proposals, weights=weights, k=1)[0]
+
+    """
+    agent transition probabilities and penalization for delay and duration
+    """
     def select_proposal(self, proposals: list) -> Proposal:
         if not proposals:
             return None
@@ -199,38 +244,101 @@ class Simulation:
         weights = []
         for p in proposals:
             performed_activities = p.case.performed
-            if p.case.agent_pairing:
-                last_agent = p.case.agent_pairing[-1].agent_id
-                proposed_activity = p.activity
-                proposal_agent = p.agent.agent_id
-                weight = compute_transition_weight(
-                    performed_activities, 
-                    last_agent, 
-                    self.transition_probabilities, 
-                    self.agent_transition_probabilities, 
-                    self.is_orchestrated,
-                    proposal_agent,
-                    proposed_activity
-                )
-            else:
-                weight = 0.0
+            case = p.case
+            last_agent = p.case.agent_pairing[-1].agent_id if p.case.agent_pairing else None
 
-            if weight == 1:
-                weight = weight * 100
+            proposed_activity = p.activity
+            proposal_agent = p.agent.agent_id
+
+            # 1. Base weight from transition probabilities
+            weight = compute_transition_weight(
+                performed_activities,
+                last_agent,
+                self.transition_probabilities,
+                self.agent_transition_probabilities,
+                self.is_orchestrated,
+                proposal_agent,
+                proposed_activity
+            )
+
+            # 2. Delay penalty (later start = worse)
+            delay = max(0.1, (p.start_time - case.current_time).total_seconds())
+
+            # 3. Duration penalty
+            duration = max(0.1, p.duration)
+
+            # 4. Hybrid score: prefer early and short with high transition probability
+            penalty_factor = 1
+            adjusted_weight = weight / ((delay + duration) ** penalty_factor)
+
+
+            weights.append(adjusted_weight)
+
+        # fallback in case all weights are zero
+        if sum(weights) == 0:
+            weights = [1.0 for _ in proposals]
+
+        return random.choices(proposals, weights=weights, k=1)[0]
     
+
+
+    def select_proposal_greedy(self, proposals: list) -> Proposal:
+
+        from datetime import datetime, timezone
+
+
+        if not proposals:
+            return None
+
+        weights = []
+        max_weight = 0
+        selected_activity = None
+
+        for p in proposals:
+            performed_activites = p.case.performed
+            if performed_activites:
+                prefix = tuple(performed_activites)
+                proposed_activity = p.activity
+                try:
+                    subdict = self.transition_probabilities[prefix]
+                    probs = [v.get(proposed_activity, 0.0) for v in subdict.values()]
+                    weight = sum(probs) / len(probs)
+                except:
+                    weight = 0
+                
+
+                if weight == 1:
+                    weight = weight * 100
+
+                if weight >= max_weight:
+                    max_weight = weight
+                    selected_activity = proposed_activity
+            else:
+                weight = 0
+
             weights.append(weight)
+                
 
         # fallback logic if none of the proposals could get a weight
         if np.array(weights).sum() == 0:
             weights = np.array(weights) + 0.001
             weights = weights.tolist()
 
-
-        # for p, w in zip(proposals, weights):
-        #     print(f"Weighted option: {p.activity} by {p.agent.agent_id} → weight {w}")
-
+        selected_activity = random.choices(proposals, weights=weights, k=1)[0].activity
+        print("Pre-selection:", selected_activity)
         
-        return random.choices(proposals, weights=weights, k=1)[0]
+        min_end_time = datetime.max.replace(tzinfo=timezone.utc)
+        i = -1
+        for p in proposals:
+            if selected_activity:
+                if p.activity != selected_activity:
+                    continue
+            if p.end_time <= min_end_time:
+                min_end_time = p.end_time
+                i = proposals.index(p) 
+
+        return proposals[i]
+
        
         
 
@@ -334,5 +442,60 @@ class Simulation:
             self.perform_proposal(selected, self.rules)
        
         return True
+    
+
+
+    def local_mcts_tick(self, calendars, budget: int = 100) -> bool:
+        """
+        Perform one scheduling tick on all active cases using Local MCTS.
+        :param calendars: mapping of agent_id to RCalendar
+        :param budget: number of rollouts per decision
+        :return: True if any proposal was executed; False otherwise
+        """
+        did_something = False
+
+        active_cases = [c for c in self.cases if not c.done and c.get_available_activities(self.rules)]
+
+        for case in active_cases:
+            available_activities = case.get_available_activities(self.rules)
+            all_proposals = []
+
+            for agent in self.agents:
+                proposals = self.make_proposals(agent, case, self.rules, self.durations, calendars, available_activities)
+                all_proposals.extend(proposals)
+
+            if not all_proposals:
+                continue
+
+            simulation = deepcopy(self)
+            simulation.calendars = calendars  # pass calendars into the clone
+
+            exploration_constant = 0.2
+            budget = 10
+
+            best_prop = mcts_select(simulation, all_proposals, budget, exploration_constant)
+            print(f"👆🏼 Best proposal: {best_prop.agent.agent_id} - {best_prop.activity}")
+
+
+            # Map agent and case from real simulation
+            real_case = case  # already in context
+            agent_map = {a.agent_id: a for a in self.agents}
+            real_agent = agent_map[best_prop.agent.agent_id]
+
+            # Create equivalent proposal for the real sim context
+            real_proposal = Proposal(
+                case=real_case,
+                agent=real_agent,
+                activity=best_prop.activity,
+                start_time=best_prop.start_time,
+                duration=best_prop.duration
+            )
+
+            self.perform_proposal(real_proposal, self.rules)
+
+            # self.perform_proposal(best_prop, self.rules)
+            did_something = True
+
+        return did_something
 
 

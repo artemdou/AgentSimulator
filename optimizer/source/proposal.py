@@ -10,6 +10,7 @@ class Proposal:
         self.activity = activity
         self.start_time = start_time
         self.end_time = start_time + pd.Timedelta(seconds=duration)
+        self.duration = duration
 
 class LogEntry:
     def __init__(self, case_id, agent_id, activity, start, end):
