@@ -95,6 +95,7 @@ def mcts_select(simulation: Any,
                 print(f"🛑 Rollout ended prematurelly after {steps} steps (no more proposals).")
                 break
 
+            # selected = random.choice(proposals)
             # selected = rollout_state.select_proposal(proposals)
             selected = rollout_state.select_proposal_greedy(proposals)
             # trying earliest and shortest selection

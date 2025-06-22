@@ -58,6 +58,8 @@ class ActivityRules:
 
             # 3 2. XOR validation (if activity is governed by XOR rules)
             xor_valid = True
+
+            # was working
             for anchor, groups in self.xor_rules.items():
                 for group_index, group in enumerate(groups):
                     if activity in group:
@@ -80,7 +82,34 @@ class ActivityRules:
 
             if xor_valid:
                 available.append(activity)
+        
+        unavailable_actions = []
+        if performed:
+            anchor = performed[-1]
+            if self.xor_rules[anchor]:
+                return sum(self.xor_rules[anchor], [])
+            
+            act = performed[-1]
+            
+            for item in self. xor_rules.items():
+                from copy import deepcopy
 
+                groups = deepcopy(item[1])
+                ind = 0
+                keep_group = None
+                for group in groups:
+                    if act in group:
+                        keep_group = ind
+                    ind = ind + 1
+                if keep_group != None:
+                    unavailable_actions = groups[0:keep_group]
+                    unavailable_actions.extend(groups[keep_group+1:])
+            
+        if unavailable_actions:
+            for action in unavailable_actions[0]:
+                if action in available:
+                    available.remove(action)
+        
         return available
 
 
