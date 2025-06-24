@@ -2,11 +2,12 @@ import math
 import random
 from copy import deepcopy
 from typing import Any, List
+import pandas as pd
 
+from utils import get_activity_duration, sample_from_distribution, shift_activity_start_to_next_valid_window, compute_transition_weight
 from mcts_node import MCTSNode  # assumes MCTSNode class in mcts_node.py
 from state import Case
-
-Proposal = Any  # replace with your actual Proposal type
+from proposal import Proposal
 
 
 # def evaluate_cost(case: Case) -> float:
@@ -21,6 +22,61 @@ def evaluate_cost(case: Case):
     base = (case.current_time - case.start_time).total_seconds()
     repeats = sum(case.performed.count(a) - 1 for a in set(case.performed))
     return base + 300 * repeats
+
+
+def make_proposals_mean(simulation, agent, case, rules, durations, calendars, available_activities):
+    """
+    Deterministic version of make_proposals that uses mean durations.
+    Suitable for use during MCTS rollouts to reduce evaluation noise.
+    """
+    proposals = []
+
+    for act in available_activities:
+        if act not in agent.capable_activities:
+            continue
+        if not rules.is_activity_allowed(act, case):
+            continue
+
+        try:
+            duration = durations[agent.agent_id][act].mean
+        except (KeyError, AttributeError) as e:
+            print(e)
+            continue
+
+        candidate_start = case.current_time
+        calendar = calendars.get(agent.agent_id)
+        calendar_json = calendar.intervals_to_json() if calendar else None
+
+        while True:
+            # Step 1: Busy window check
+            overlaps = any(
+                start < candidate_start + pd.Timedelta(seconds=duration) and
+                candidate_start < end
+                for start, end in agent.busy_windows
+            )
+            if overlaps:
+                for start, end in sorted(agent.busy_windows):
+                    if candidate_start < end and candidate_start + pd.Timedelta(seconds=duration) > start:
+                        candidate_start = end
+                        break
+                continue
+
+            # Step 2: Calendar compliance
+            if calendar_json:
+                if not simulation.is_within_calendar(candidate_start, duration, calendar_json):
+                    shifted = shift_activity_start_to_next_valid_window(candidate_start, duration, calendar_json)
+                    if shifted is None:
+                        candidate_start = None
+                        break
+                    candidate_start = shifted
+                    continue
+
+            break
+
+        if candidate_start is not None:
+            proposals.append(Proposal(case, agent, act, candidate_start, duration))
+
+    return proposals
 
 
 
@@ -64,7 +120,8 @@ def mcts_select(simulation: Any,
             available = case.get_available_activities(child_state.rules)
             calendars = getattr(child_state, 'calendars', {})
 
-            reproposals = child_state.make_proposals(agent, case, child_state.rules, child_state.durations, calendars, available)
+            reproposals = make_proposals_mean(child_state, agent, case, child_state.rules, child_state.durations, calendars, available)
+
             matching = [p for p in reproposals if p.activity == prop.activity]
 
             if matching:
@@ -86,18 +143,21 @@ def mcts_select(simulation: Any,
             available_activities = case.get_available_activities(rollout_state.rules)
             proposals = []
             for agent in rollout_state.agents:
-                props = rollout_state.make_proposals(
-                    agent, case, rollout_state.rules,
-                    rollout_state.durations, calendars, available_activities
+                props = make_proposals_mean(
+                    rollout_state, agent, case,
+                    rollout_state.rules,
+                    rollout_state.durations,
+                    calendars,
+                    available_activities
                 )
                 proposals.extend(props)
             if not proposals:
-                print(f"🛑 Rollout ended prematurelly after {steps} steps (no more proposals).")
+                print(f"🛑 Rollout ended prematurelly after {steps} steps (no more proposals). {available_activities}")
                 break
 
-            # selected = random.choice(proposals)
+            selected = random.choice(proposals)
             # selected = rollout_state.select_proposal(proposals)
-            selected = rollout_state.select_proposal_greedy(proposals)
+            # selected = rollout_state.select_proposal_greedy(proposals)
             # trying earliest and shortest selection
             # selected = min(proposals, key=lambda p: p.duration + (p.start_time - case.current_time).total_seconds())
             # print(f"➡️ Rollout step {steps + 1}: selected {selected.activity} by agent {selected.agent.agent_id}")

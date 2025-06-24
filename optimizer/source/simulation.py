@@ -61,7 +61,6 @@ class Simulation:
         proposals = []
 
         for act in available_activities:
-            print(available_activities)
             if act not in agent.capable_activities:
                 continue
             if not rules.is_activity_allowed(act, case):
@@ -472,7 +471,7 @@ class Simulation:
             # simulation.calendars = calendars  # pass calendars into the clone
 
             exploration_constant = 1
-            budget = 100
+            budget = 300
 
             best_prop = mcts_select(self, all_proposals, budget, exploration_constant)
             print(f"👆🏼 Best proposal: {best_prop.agent.agent_id} - {best_prop.activity} - {best_prop.end_time}")
