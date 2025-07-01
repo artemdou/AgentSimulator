@@ -10,13 +10,34 @@ from state import Case
 from proposal import Proposal
 
 
-# def evaluate_cost(case: Case) -> float:
-#     """
-#     Compute the trace duration for a single case.
-#     """
-#     start = case.start_time
-#     end = case.current_time
-#     return (end - start).total_seconds()
+def evaluate_cost_generic(case: Case, log: list, agent_costs: dict, cost_type: str = "time") -> float:
+    """
+    General cost evaluation function for different optimization modes.
+
+    Args:
+        case (Case): The current simulation case.
+        log (list[LogEntry]): The log containing all performed actions.
+        agent_costs (dict): Mapping of agent_id to hourly cost.
+        cost_type (str): "time" or "agent_cost"
+
+    Returns:
+        float: The cost score (lower is better).
+    """
+    if cost_type == "time":
+        return (case.current_time - case.start_time).total_seconds()
+
+    elif cost_type == "agent_cost":
+        total_cost = 0.0
+        for entry in log:
+            duration_hours = (entry.end - entry.start).total_seconds() / 3600.0
+            rate = agent_costs.get(entry.agent_id, 0)
+            total_cost += duration_hours * rate
+        return total_cost
+
+    else:
+        raise ValueError(f"Unsupported cost_type: {cost_type}")
+
+
 
 def evaluate_cost(case: Case):
     base = (case.current_time - case.start_time).total_seconds()
@@ -169,7 +190,13 @@ def mcts_select(simulation: Any,
                 print(f"🟢 Performed activities: {case.performed}")
                 break
 
-        cost = evaluate_cost(case)
+        # cost = evaluate_cost(case)
+        cost = evaluate_cost_generic(
+            case=case,
+            log=rollout_state.log,
+            agent_costs=getattr(rollout_state, "agent_costs", {}),
+            cost_type=getattr(rollout_state, "optimization_mode", "time")
+        )
         print(f"💸 Rollout cost: {cost}")
         node.backpropagate(-cost)
 

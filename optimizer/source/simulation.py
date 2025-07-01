@@ -15,7 +15,7 @@ from local_mcts import mcts_select
 # from source.utils import sample_from_distribution
 
 class Simulation:
-    def __init__(self, agents, cases, rules, durations, case_arrivals, is_orchestrated, transition_probabilities, agent_transition_probabilities, activity_durations):
+    def __init__(self, agents, cases, rules, durations, case_arrivals, is_orchestrated, transition_probabilities, agent_transition_probabilities, activity_durations, optimization_mode, agent_costs):
         self.agents = agents
         self.cases = cases
         self.rules = rules
@@ -26,6 +26,8 @@ class Simulation:
         self.transition_probabilities = transition_probabilities
         self.agent_transition_probabilities = agent_transition_probabilities
         self.activity_durations = activity_durations
+        self.optimization_mode = optimization_mode
+        self.agent_costs = agent_costs or {}
 
     def make_proposals(self, agent, case, rules: ActivityRules, durations: dict, calendars: dict, available_activities: list):
         """
@@ -497,5 +499,12 @@ class Simulation:
             did_something = True
 
         return did_something
+    
+
+    def agent_cost_optimization_tick(self, calendars, budget: int = 100):
+        # TODO: implement actual cost function
+        print("🔧 Agent cost optimization not yet implemented.")
+        return self.local_mcts_tick(calendars, budget=budget)
+
 
 
