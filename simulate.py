@@ -25,8 +25,8 @@ def parse_arguments():
 
     # Simulation parameters
     parser.add_argument('--num_simulations', type=int, default=10, help='Number of simulations to run')
-    parser.add_argument('--execution_type', choices=['random', 'original'], default='original',
-                    help="Execution mode: 'random' disables learned transition probabilities")
+    parser.add_argument('--execution_type', choices=['greedy_optimize', 'original'], default='original',
+                    help="Sets the execution mode")
 
     
     args = parser.parse_args()

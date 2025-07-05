@@ -4,6 +4,8 @@ from datetime import datetime
 from mesa import Agent
 import scipy.stats as st
 import time
+import pandas as pd # <-- ADD THIS IMPORT
+
 
 
 class ContractorAgent(Agent):
@@ -18,56 +20,6 @@ class ContractorAgent(Agent):
         self.model = model
         self.current_activity_index = None
         self.activity_performed = False
-
-
-    # def step(self, scheduler, agent_keys, cases):
-    #     method = "step"
-    #     # Remove contractor agent from agent_keys
-    #     agent_keys = agent_keys[1:]
-        
-    #     if self.model.central_orchestration:
-    #         # Simply sort by availability and use that order
-    #         sorted_agent_keys = self.sort_agents_by_availability(agent_keys)
-    #         selected_agent = sorted_agent_keys[0]
-    #     else:
-    #         current_agent = self.case.previous_agent
-    #         if current_agent == -1:
-    #             # If no previous agent/activity, just sort by availability
-    #             sorted_agent_keys = self.sort_agents_by_availability(agent_keys)
-    #             selected_agent = sorted_agent_keys[0]
-    #         else:
-    #             # Get transition probabilities for current state
-    #             current_activity = self.case.activities_performed[-1]
-    #             next_activity = self.activities[self.new_activity_index]
-                
-    #             # Get probabilities for each agent
-    #             probabilities = {}
-    #             for agent in agent_keys:
-    #                 prob = (self.model.agent_transition_probabilities
-    #                     .get(current_agent, {})
-    #                     .get(current_activity, {})
-    #                     .get(agent, {})
-    #                     .get(next_activity, 0))
-    #                 probabilities[agent] = prob
-                
-    #             # Filter agents with non-zero probabilities
-    #             valid_agents = [agent for agent in agent_keys if probabilities[agent] > 0]
-    #             if valid_agents:
-    #                 # Sample one agent based on probabilities
-    #                 valid_probs = [probabilities[agent] for agent in valid_agents]
-    #                 selected_agent = random.choices(valid_agents, weights=valid_probs, k=1)[0]
-
-    #             else:
-    #                 # Fallback to availability sorting if no valid transitions
-    #                 sorted_agent_keys = self.sort_agents_by_availability(agent_keys)
-    #                 selected_agent = sorted_agent_keys[0]
-
-    #     current_timestamp = self.get_current_timestamp(selected_agent)
-    #     getattr(scheduler._agents[selected_agent], method)(
-    #             parallel_activity=False,
-    #             current_timestamp=current_timestamp,
-    #             perform_multitask=False
-    #         )
 
 
     def step(self, scheduler, agent_keys, cases):
@@ -90,18 +42,6 @@ class ContractorAgent(Agent):
         # # 2) sort by next availability
         sorted_agent_keys = self.sort_agents_by_availability(sorted_agent_keys)
             
-        # if self.model.central_orchestration == False:
-        #         # 3) sort by transition probs
-        #         current_agent = self.case.previous_agent
-        #         if current_agent != -1:
-        #             current_activity = self.case.activities_performed[-1]
-        #             if current_agent in self.model.agent_transition_probabilities:
-        #                 if current_activity in self.model.agent_transition_probabilities[current_agent]:
-        #                     current_probabilities = self.model.agent_transition_probabilities[current_agent][current_activity]
-        #                 else:
-        #                     current_probabilities = self.model.agent_transition_probabilities[current_agent]
-        #             sorted_agent_keys = sorted(sorted_agent_keys, key=lambda x: current_probabilities.get(x, 0), reverse=True)
-
         if self.model.central_orchestration == False:
             # 3) sort by transition probs
             current_agent = self.case.previous_agent
@@ -231,37 +171,6 @@ class ContractorAgent(Agent):
 
         return activity_duration
     
-    # def sample_starting_activity(self,):
-    #     """
-    #     sample the activity that starts the case based on the frequency of starting activities in the train log
-    #     """
-    #     # start_activities = self.model.data.groupby('case_id')['activity_name'].first().tolist()
-    #     start_time = time.time()
-    #     start_activities = (self.model.data.groupby('case_id')
-    #                       .apply(lambda x: x.sort_values(['start_timestamp', 'end_timestamp'])
-    #                       .iloc[0]['activity_name'])
-    #                       .tolist())
-    #     if "Start" in start_activities or "start" in start_activities:
-    #         sampled_activity = "Start" if "Start" in start_activities else "start"
-    #         print(f"Duration of sample_starting_activity(): {time.time() - start_time:.4f} seconds")
-    #         return sampled_activity
-    #     # Count occurrences of each entry and create a dictionary
-    #     start_count = {}
-    #     for entry in start_activities:
-    #         if entry in start_count:
-    #             start_count[entry] += 1
-    #         else:
-    #             start_count[entry] = 1
-    #     # print(f"start_count: {start_count}")
-
-    #     for key, value in start_count.items():
-    #         start_count[key] = value / len(self.model.data['case_id'].unique())
-
-    #     sampled_activity = random.choices(list(start_count.keys()), weights=start_count.values(), k=1)[0]
-    #     print(f"Duration of sample_starting_activity(): {time.time() - start_time:.4f} seconds")
-    #     return sampled_activity
-    
-
     def sample_starting_activity(self):
         """
         Sample the activity that starts the case based on the frequency of starting activities in the train log
@@ -323,183 +232,216 @@ class ContractorAgent(Agent):
                     return True
         return False
     
+    # def get_potential_agents(self, case):
+    #     """
+    #     check if there already happened activities in the current case
+    #         if no: current activity is usual start activity
+    #         if yes: current activity is the last activity of the current case
+    #     """
+    #     self.case = case
+    #     case_ended = False
 
-    
+    #     if case.get_last_activity() is None: # if first activity in case
+    #         sampled_start_act = self.sample_starting_activity()
+    #         next_activity = sampled_start_act
+    #     else:
+    #         prefix = self.case.activities_performed
+    #         activity_list = None
+
+    #         # Logic to get the list of possible next activities
+    #         if self.model.central_orchestration:
+    #             while tuple(prefix) not in self.transition_probabilities:
+    #                 prefix = prefix[1:]
+    #             activity_list = list(self.transition_probabilities[tuple(prefix)].keys())
+    #             probabilities = list(self.transition_probabilities[tuple(prefix)].values())
+    #         else:
+    #             while tuple(prefix) not in self.transition_probabilities or self.case.previous_agent not in self.transition_probabilities[tuple(prefix)]:
+    #                 prefix = prefix[1:]
+    #             activity_list = list(self.transition_probabilities[tuple(prefix)][self.case.previous_agent].keys())
+    #             probabilities = list(self.transition_probabilities[tuple(prefix)][self.case.previous_agent].values())
+
+    #         # ===== DECISION LOGIC: GREEDY OPTIMIZATION OR DEFAULT SIMULATION =====
+    #         if self.model.params.get('execution_type') == 'greedy_optimize':
+    #             progress_scores = self.model.params.get('activity_progress_scores', {})
+    #             max_time = self.model.params.get('max_time_per_step', 1.0)
+    #             weights = self.model.params.get('optimizer_weights', {'time': 0.5, 'progress': 0.5})
+
+    #             best_choice = {
+    #                 'activity': None,
+    #                 'score': float('inf'),
+    #             }
+
+    #             # The lookahead now considers each agent-activity pair individually
+    #             for possible_activity in activity_list:
+    #                 if possible_activity == 'zzz_end':
+    #                     continue
+
+    #                 progress_score = progress_scores.get(possible_activity, 0)
+                    
+    #                 capable_agents = [key for key, value in self.agent_activity_mapping.items() if possible_activity in value]
+                    
+    #                 for agent_id in capable_agents:
+    #                     # --- Calculate the score for this specific (agent, activity) pair ---
+    #                     agent_availability = self.model.agents_busy_until.get(agent_id, self.model.params['start_timestamp'])
+                        
+    #                     # This is the ACTUAL duration of the work itself
+    #                     activity_duration_dist = self.model.activity_durations_dict[agent_id][possible_activity]
+    #                     work_duration_seconds = activity_duration_dist.mean
+
+    #                     # This is the ACTUAL time the case has to wait for this specific agent
+    #                     wait_duration_seconds = max(0, (agent_availability - case.current_timestamp).total_seconds())
+
+    #                     # Now we use the correct, decoupled values for scoring
+    #                     # NOTE: We can use the same max_time for normalization, or create separate ones.
+    #                     # For an MVP, using one is fine.
+    #                     normalized_time = min(1.0, (wait_duration_seconds + work_duration_seconds) / max_time)
+
+    #                     total_score = (weights['time'] * normalized_time) + \
+    #                                 (weights['progress'] * (1 - progress_score))
+
+    #                     if total_score < best_choice['score']:
+    #                         best_choice['activity'] = possible_activity
+    #                         best_choice['score'] = total_score
+                
+    #             next_activity = best_choice['activity']
+    #             if next_activity is None:
+    #                 next_activity = 'zzz_end'
+    #         else: # Default simulation behavior
+    #             next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
+
+    #     # ===== COMMON LOGIC FOR ANY CHOICE =====
+    #     if next_activity == 'zzz_end':
+    #         return None, True
+
+    #     self.new_activity_index = self.activities.index(next_activity)
+        
+    #     # ... (rest of the function, including activity_allowed checks, remains the same) ...
+    #     activity_allowed = True
+    #     number_occurence_of_next_activity = self.case.activities_performed.count(next_activity) + 1
+    #     if number_occurence_of_next_activity > self.model.max_activity_count_per_case.get(next_activity, float('inf')):
+    #         activity_allowed = False
+    #         possible_other_next_activities = self.check_for_other_possible_next_activity(next_activity)
+    #         if len(possible_other_next_activities) > 0:
+    #             next_activity = random.choice(possible_other_next_activities)
+    #             self.new_activity_index = self.activities.index(next_activity)
+    #             activity_allowed = True
+    #             if next_activity == 'zzz_end':
+    #                 return None, True
+    #         else:
+    #             activity_allowed = True
+
+    #     if not activity_allowed:
+    #         return None, False
+
+    #     potential_agents = [key for key, value in self.agent_activity_mapping.items() if next_activity in value]
+    #     potential_agents.insert(0, 9999)
+
+    #     return potential_agents, case_ended
+
     def get_potential_agents(self, case):
         """
-        check if there already happened activities in the current case
-            if no: current activity is usual start activity
-            if yes: current activity is the last activity of the current case
+        Finds the single best (activity, agent) pair to execute next by
+        holistically evaluating every possible combination.
         """
         self.case = case
-        # print(f"case: {case.case_id}")
         case_ended = False
 
-        current_timestamp = self.case.current_timestamp
-        # self.case.potential_additional_agents = []
-        # print(f"activities_performed: {self.case.activities_performed}")
-        # print(f"get last activity: {self.case.get_last_activity()}")
-
-        if case.get_last_activity() == None: # if first activity in case
-            # sample starting activity
+        if case.get_last_activity() is None:
+            # Logic for starting activity remains the same
             sampled_start_act = self.sample_starting_activity()
-            current_act = sampled_start_act
-            self.new_activity_index = self.activities.index(sampled_start_act)
-            next_activity = sampled_start_act   
-            # print(f"start activity: {next_activity}")
+            next_activity = sampled_start_act
+            # For the first activity, we still need to find potential agents
+            potential_agents = [key for key, value in self.agent_activity_mapping.items() if next_activity in value]
+            potential_agents.insert(0, 9999)
+            self.new_activity_index = self.activities.index(next_activity)
+            return potential_agents, False
+
+        # --- Get the list of possible next activities ---
+        prefix = self.case.activities_performed
+        activity_list = None
+        probabilities = None # Keep probabilities for the default mode
+
+        if self.model.central_orchestration:
+            while tuple(prefix) not in self.transition_probabilities:
+                prefix = prefix[1:]
+            activity_list = list(self.transition_probabilities[tuple(prefix)].keys())
+            probabilities = list(self.transition_probabilities[tuple(prefix)].values())
         else:
-            current_act = case.get_last_activity()
-            self.current_activity_index = self.activities.index(current_act)
+            while tuple(prefix) not in self.transition_probabilities or self.case.previous_agent not in self.transition_probabilities[tuple(prefix)]:
+                prefix = prefix[1:]
+            activity_list = list(self.transition_probabilities[tuple(prefix)][self.case.previous_agent].keys())
+            probabilities = list(self.transition_probabilities[tuple(prefix)][self.case.previous_agent].values())
 
-            prefix = self.case.activities_performed
-
-            if self.model.central_orchestration:
-                while tuple(prefix) not in self.transition_probabilities.keys():
-                    prefix = prefix[1:]
-                # Extract activities and probabilities
-                # print(self.transition_probabilities[tuple(prefix)])
-                activity_list = list(self.transition_probabilities[tuple(prefix)].keys())
-                probabilities = list(self.transition_probabilities[tuple(prefix)].values())
-
-
-                # original
-                # next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
-                # change
-                if self.model.params.get('execution_type', 'original') == 'random':
-                    possible_activities = [a for a in self.activities if a != 'zzz_end'] 
-                    next_activity = random.choice(possible_activities)
-                else:
-                    next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
-
-
-                # # Sample an activity based on the probabilities
-                # while True:
-                #     # print(f"activity_list: {activity_list}")
-                #     # print(f"probabilities: {probabilities}")
-                #     next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
-                #     # print(f"next_activity: {next_activity}")
-                #     if len(activity_list) > 1:
-                #         if self.check_if_all_preceding_activities_performed(next_activity):
-                #             # print("True")
-                #             break
-                #         else:
-                #             print(f"Not all preceding activities performed for {next_activity}")
-                #     else:
-                #         break
-                self.new_activity_index = self.activities.index(next_activity)
-            else:
-                while tuple(prefix) not in self.transition_probabilities.keys() or self.case.previous_agent not in self.transition_probabilities[tuple(prefix)].keys():
-                    prefix = prefix[1:]
-                # Extract activities and probabilities
-                # print(self.transition_probabilities[tuple(prefix)])
-                activity_list = list(self.transition_probabilities[tuple(prefix)][self.case.previous_agent].keys())
-                
-                probabilities = list(self.transition_probabilities[tuple(prefix)][self.case.previous_agent].values())
-                
-                # original
-                # next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
-                # change
-                if self.model.params.get('execution_type', 'original') == 'random':
-                    possible_activities = [a for a in self.activities if a != 'zzz_end'] 
-                    next_activity = random.choice(possible_activities)
-                else:
-                    next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
-
-
-                # # Sample an activity based on the probabilities
-                # time_0 = time.time()
-                # while True:
-                #     # print("get next activity")
-                #     # print(f"transition_probabilities: {self.transition_probabilities}")
-                #     # print(f"prefix: {prefix}")
-                #     # print(f"previous_agent: {self.case.previous_agent}")
-                #     # print(f"activity_list: {activity_list}")
-                #     # print(f"probabilities: {probabilities}")
-                #     next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
-                #     if len(activity_list) > 1:
-                #         if self.check_if_all_preceding_activities_performed(next_activity):
-                #             # print("True")
-                #             break
-                #         else:
-                #             print(f"Not all preceding activities performed for {next_activity}")
-                #     else:
-                #         break
-                # time_1 = time.time()
-                # print(f"duration: {time_1 - time_0}")
-                self.new_activity_index = self.activities.index(next_activity)
-
-            # print(f"current_act: {current_act}")
-            # print(f"next_activity: {next_activity}")
-            # print(self.model.prerequisites)
-
-
-            # check if next activity is zzz_end
-            if next_activity == 'zzz_end':
-                potential_agents = None
-                case_ended = True
-                return potential_agents, case_ended#, None, None
+        # ===== DECISION LOGIC: HOLISTIC OPTIMIZATION OR DEFAULT SIMULATION =====
+        if self.model.params.get('execution_type') == 'greedy_optimize':
             
-            if self.model.discover_parallel_work:
-                # check if next activity is allowed by looking at prerequisites
-                activity_allowed = False
-                for key, value in self.model.prerequisites.items():
-                    if next_activity == key:
-                        for i in range(len(value)):
-                            # if values is a single list, then only ONE of the entries must have been performed already (XOR gateway)
-                            if not isinstance(value[i], list):
-                                if value[i] in self.case.activities_performed:
-                                    activity_allowed = True
-                                    break
-                            # if value contains sublists, then all of the values in the sublist must have been performed (AND gateway)
-                            else:
-                                if all(value_ in self.case.activities_performed for value_ in value[i]):
-                                    activity_allowed = True
-                                    break
-                # if activity is not specified as prerequisite, additionally check if it is a parallel one to the last activity and thus actually can be performed
-                if activity_allowed == False:
-                    for i in range(len(self.model.parallel_activities)):
-                        if next_activity in self.model.parallel_activities[i]:
-                            if self.case.activities_performed[-1] in self.model.parallel_activities[i]:
-                                activity_allowed = True
+            # --- Retrieve optimizer parameters from the model ---
+            progress_scores = self.model.params.get('activity_progress_scores', {})
+            max_time = self.model.params.get('max_time_per_step', 1.0)
+            weights = self.model.params.get('optimizer_weights', {'time': 0.5, 'progress': 0.5})
+
+            best_choice = {
+                'activity': None,
+                'agent_id': None,
+                'score': float('inf'), 
+            }
+
+            # === HOLISTIC EVALUATION LOOP: Iterate through all (activity, agent) pairs ===
+            for possible_activity in activity_list:
+                if possible_activity == 'zzz_end':
+                    continue
+                
+                capable_agents = [key for key, value in self.agent_activity_mapping.items() if possible_activity in value]
+                
+                for agent_id in capable_agents:
+                    # --- This is the core of Solution 3: Evaluate each specific pair ---
+                    agent_availability = self.model.agents_busy_until.get(agent_id, self.model.params['start_timestamp'])
+                    start_time = max(case.current_timestamp, agent_availability)
+                    
+                    activity_duration_dist = self.model.activity_durations_dict[agent_id][possible_activity]
+                    work_duration_seconds = activity_duration_dist.mean
+
+                    # --- Use calendar-aware logic to get the REAL end time for this pair ---
+                    agent_calendar = self.model.calendars.get(agent_id)
+                    if agent_calendar and work_duration_seconds > 0:
+                        wall_clock_duration_seconds = agent_calendar.find_idle_time(start_time, work_duration_seconds)
+                        end_time = start_time + pd.Timedelta(seconds=wall_clock_duration_seconds)
+                    else:
+                        end_time = start_time + pd.Timedelta(seconds=work_duration_seconds)
+                    
+                    # --- Calculate the final score for THIS SPECIFIC PAIR ---
+                    duration_for_score = (end_time - case.current_timestamp).total_seconds()
+                    normalized_time = min(1.0, duration_for_score / max_time)
+                    progress_score = progress_scores.get(possible_activity, 0)
+                    total_score = (weights['time'] * normalized_time) + (weights['progress'] * (1 - progress_score))
+
+                    if total_score < best_choice['score']:
+                        best_choice['activity'] = possible_activity
+                        best_choice['agent_id'] = agent_id
+                        best_choice['score'] = total_score
+            
+            # --- After checking all pairs, commit to the best one ---
+            if best_choice['activity'] is None:
+                next_activity = 'zzz_end'
+                chosen_agent_id = None
             else:
-                activity_allowed = True
+                next_activity = best_choice['activity']
+                chosen_agent_id = best_choice['agent_id']
+                
+            if next_activity == 'zzz_end':
+                return None, True
 
-            # additionally check if new activity was already performed
-            number_occurence_of_next_activity = self.case.activities_performed.count(next_activity)
-            number_occurence_of_next_activity += 1 # add 1 as it would appear one more time in the next step
-            if number_occurence_of_next_activity > self.model.max_activity_count_per_case[next_activity]:
-                activity_allowed = False
-                # check if there is another possible activity that can be performed
-                # go through prerequisites and check for which act the current next_activity is a prerequisite for
-                # if it is one, then check if this other activity can be performed
-                possible_other_next_activities = self.check_for_other_possible_next_activity(next_activity)
-                if len(possible_other_next_activities) > 0:
-                    next_activity = random.choice(possible_other_next_activities)
-                    self.new_activity_index = self.activities.index(next_activity)
-                    # print(f"Changed next activity to {next_activity}")
-                    activity_allowed = True
-                    # check if next activity is zzz_end
-                    if next_activity == 'zzz_end':
-                        potential_agents = None
-                        case_ended = True
-                        return potential_agents, case_ended
-                # to avoid that simulation does not terminate
-                else:
-                    activity_allowed = True
+            self.new_activity_index = self.activities.index(next_activity)
+            # Return a list with ONLY the chosen agent. The rest of the system will handle it.
+            potential_agents = [9999, chosen_agent_id]
+            return potential_agents, False
 
-            if activity_allowed == False:
-                # print(f"case_id: {self.case.case_id}: Next activity {next_activity} not allowed from current activity {current_act} with history {self.case.activities_performed}")
-                # TODO: do something when activity is not allowed
-                potential_agents = None
-                return potential_agents, case_ended#, [], []
-            else:
-                pass
-                # print(f"case_id: {self.case.case_id}: Next activity {next_activity} IS ALLOWED from current activity {current_act} with history {self.case.activities_performed}")
-        
-        # check which agents can potentially perform the next task
-        potential_agents = [key for key, value in self.agent_activity_mapping.items() if any(next_activity == item for item in value)]
-        # also add contractor agent to list as he is always active
-        potential_agents.insert(0, 9999)
-
-
-        return potential_agents, case_ended
+        else: # Default simulation behavior (remains unchanged)
+            next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
+            if next_activity == 'zzz_end':
+                return None, True
+            
+            self.new_activity_index = self.activities.index(next_activity)
+            potential_agents = [key for key, value in self.agent_activity_mapping.items() if next_activity in value]
+            potential_agents.insert(0, 9999)
+            return potential_agents, False

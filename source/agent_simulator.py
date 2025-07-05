@@ -2,9 +2,16 @@ import os
 from source.train_test_split import split_data
 from source.discovery import discover_simulation_parameters
 from source.simulation import simulate_process
+
+import pandas as pd
+
 class AgentSimulator:
     def __init__(self, params):
         self.params = params
+
+        if 'optimizer_weights' not in self.params:
+            self.params['optimizer_weights'] = {'time': 0.3, 'progress': 0.7}
+
 
     def execute_pipeline(self):
         self.df_train, self.df_test, self.num_cases_to_simulate, self.df_val, self.num_cases_to_simulate_val = self._split_log()
@@ -22,6 +29,35 @@ class AgentSimulator:
             self.params['discover_extr_delays']
         )
         self.simulation_parameters['execution_type'] = self.params['execution_type']
+
+             # ===== START OF NEW LOGIC =====
+        # If we are in optimization mode, discover the progress-based scoring parameters
+        if self.params['execution_type'] == 'greedy_optimize':
+            print("Discovering progress-based scoring parameters for optimization...")
+            
+            # 1. Calculate Activity Progress Scores
+            # Create a step number for each event within its case
+            df_temp = self.df_train.copy()
+            df_temp['step_number'] = df_temp.groupby('case_id')['start_timestamp'].rank(method='first', ascending=True)
+            # Calculate the average step number for each activity
+            avg_steps = df_temp.groupby('activity_name')['step_number'].mean()
+            # Normalize to a 0-1 score
+            max_avg_step = avg_steps.max()
+            activity_progress_scores = (avg_steps / max_avg_step).to_dict()
+            self.simulation_parameters['activity_progress_scores'] = activity_progress_scores
+            print(f"  - Discovered progress scores for {len(activity_progress_scores)} activities.")
+            print(activity_progress_scores)
+
+            # 2. Calculate Normalization Factor for Time
+            df_temp['duration_seconds'] = (pd.to_datetime(df_temp['end_timestamp']) - pd.to_datetime(df_temp['start_timestamp'])).dt.total_seconds()
+            # Use the 95th percentile as a robust "max time" to avoid outliers
+            max_time_per_step = df_temp['duration_seconds'].quantile(0.95)
+            # Handle case where max_time is 0 to avoid division by zero
+            self.simulation_parameters['max_time_per_step'] = max_time_per_step if max_time_per_step > 0 else 1.0
+            print(f"  - Set max_time_per_step for normalization to {self.simulation_parameters['max_time_per_step']:.2f} seconds.")
+
+            # 3. Pass optimizer weights to the simulation
+            self.simulation_parameters['optimizer_weights'] = self.params['optimizer_weights']
 
         # I commended out
         # print(f"agent to resource: {self.simulation_parameters['agent_to_resource']}")
