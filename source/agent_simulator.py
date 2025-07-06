@@ -10,7 +10,7 @@ class AgentSimulator:
         self.params = params
 
         if 'optimizer_weights' not in self.params:
-            self.params['optimizer_weights'] = {'time': 0.3, 'progress': 0.7}
+            self.params['optimizer_weights'] = {'progress': 0, 'cost': 0.5, 'wait_cost': 0.5}
 
 
     def execute_pipeline(self):
@@ -48,15 +48,37 @@ class AgentSimulator:
             print(f"  - Discovered progress scores for {len(activity_progress_scores)} activities.")
             print(activity_progress_scores)
 
-            # 2. Calculate Normalization Factor for Time
-            df_temp['duration_seconds'] = (pd.to_datetime(df_temp['end_timestamp']) - pd.to_datetime(df_temp['start_timestamp'])).dt.total_seconds()
-            # Use the 95th percentile as a robust "max time" to avoid outliers
-            max_time_per_step = df_temp['duration_seconds'].quantile(0.95)
-            # Handle case where max_time is 0 to avoid division by zero
-            self.simulation_parameters['max_time_per_step'] = max_time_per_step if max_time_per_step > 0 else 1.0
-            print(f"  - Set max_time_per_step for normalization to {self.simulation_parameters['max_time_per_step']:.2f} seconds.")
+            # # 2. Calculate Normalization Factor for Time
+            # df_temp['duration_seconds'] = (pd.to_datetime(df_temp['end_timestamp']) - pd.to_datetime(df_temp['start_timestamp'])).dt.total_seconds()
+            # # Use the 95th percentile as a robust "max time" to avoid outliers
+            # max_time_per_step = df_temp['duration_seconds'].quantile(0.95)
+            # # Handle case where max_time is 0 to avoid division by zero
+            # self.simulation_parameters['max_time_per_step'] = max_time_per_step if max_time_per_step > 0 else 1.0
+            # print(f"  - Set max_time_per_step for normalization to {self.simulation_parameters['max_time_per_step']:.2f} seconds.")
 
-            # 3. Pass optimizer weights to the simulation
+            # ===== START: NEW WAIT COST DISCOVERY LOGIC =====
+            self.simulation_parameters['cost_of_delay_per_hour'] = self.params.get('cost_of_delay_per_hour', 0)
+
+            if self.simulation_parameters['cost_of_delay_per_hour'] > 0:
+                # To normalize wait_cost, we need a sense of "max wait time".
+                # We can derive this from the inter-arrival times of cases.
+                # A long wait is relative to how often new cases arrive.
+                case_arrivals = self.df_train.groupby('case_id')['start_timestamp'].min().sort_values()
+                inter_arrival_times = case_arrivals.diff().dt.total_seconds().dropna()
+                
+                # Use the 95th percentile as a robust "max wait time" to avoid outliers
+                max_wait_seconds = inter_arrival_times.quantile(0.95)
+                
+                # Calculate the max wait cost for normalization
+                max_wait_cost = (max_wait_seconds / 3600) * self.simulation_parameters['cost_of_delay_per_hour']
+                self.simulation_parameters['max_wait_cost'] = max_wait_cost if max_wait_cost > 0 else 1.0
+                print(f"  - Set max_wait_cost for normalization to {self.simulation_parameters['max_wait_cost']:.2f}.")
+
+
+            # 3. Pass agents' hourly costs
+            self.simulation_parameters['agent_costs'] = self.params.get('agent_costs', {})
+
+            # 4. Pass optimizer weights to the simulation
             self.simulation_parameters['optimizer_weights'] = self.params['optimizer_weights']
 
         # I commended out
