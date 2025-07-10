@@ -48,6 +48,7 @@ class Case:
         self.potential_additional_agents = []
         self.timestamp_before_and_gateway = start_timestamp
         self.previous_agent = -1
+        self.agents_involved = set()
 
     def get_last_activity(self):
         """
@@ -104,6 +105,9 @@ class BusinessProcessModel(Model):
         # Data collector to track agent activities over time
         self.datacollector = DataCollector(agent_reporters={"Activity": "current_activity_index"})
         self.simulated_events = []
+
+        self.globally_used_agents = set()
+
 
 
     def step(self, cases):

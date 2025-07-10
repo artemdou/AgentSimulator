@@ -62,8 +62,6 @@ class ContractorAgent(Agent):
                             if len(sorted_agent_keys_) > 0:
                                 probabilities = [current_probabilities[agent] for agent in sorted_agent_keys_]
                                 sorted_agent_keys = random.choices(sorted_agent_keys_, weights=probabilities, k=len(sorted_agent_keys_))
-                            else:
-                                sorted_agent_keys = sorted_agent_keys
         
         last_possible_agent = False
 
@@ -165,120 +163,26 @@ class ContractorAgent(Agent):
                 return all(val in self.case.activities_performed for val in value)
         return False
 
-    # def get_potential_agents(self, case):
-    #     self.case = case
-    #     case_ended = False
-
-    #     if case.get_last_activity() is None:
-    #         next_activity = self.sample_starting_activity()
-    #         potential_agents = [key for key, value in self.agent_activity_mapping.items() if next_activity in value]
-    #         potential_agents.insert(0, 9999)
-    #         self.new_activity_index = self.activities.index(next_activity)
-    #         return potential_agents, False
-
-    #     prefix = self.case.activities_performed
-    #     activity_list, probabilities = None, None
-        
-    #     if self.model.central_orchestration:
-    #         while tuple(prefix) not in self.transition_probabilities:
-    #             prefix = prefix[1:] if len(prefix) > 1 else []
-    #             if not prefix: break
-    #         if tuple(prefix) in self.transition_probabilities:
-    #             activity_list = list(self.transition_probabilities[tuple(prefix)].keys())
-    #             probabilities = list(self.transition_probabilities[tuple(prefix)].values())
-    #     else:
-    #         while tuple(prefix) not in self.transition_probabilities or self.case.previous_agent not in self.transition_probabilities.get(tuple(prefix), {}):
-    #             prefix = prefix[1:] if len(prefix) > 1 else []
-    #             if not prefix: break
-    #         if tuple(prefix) in self.transition_probabilities and self.case.previous_agent in self.transition_probabilities[tuple(prefix)]:
-    #             activity_list = list(self.transition_probabilities[tuple(prefix)][self.case.previous_agent].keys())
-    #             probabilities = list(self.transition_probabilities[tuple(prefix)][self.case.previous_agent].values())
-
-    #     if not activity_list:
-    #         return None, True
-
-    #     if self.model.params.get('execution_type') == 'greedy_optimize':
-    #         progress_scores = self.model.params.get('activity_progress_scores', {})
-    #         max_time = self.model.params.get('max_time_per_step', 1.0)
-    #         agent_costs = self.model.params.get('agent_costs', {})
-    #         max_cost = self.model.params.get('max_task_cost', 1.0)
-    #         weights = self.model.params.get('optimizer_weights', {})
-
-    #         best_choice = {'activity': None, 'agent_id': None, 'score': float('inf')}
-
-    #         for possible_activity in activity_list:
-    #             if possible_activity == 'zzz_end': continue
-    #             capable_agents = [key for key, value in self.agent_activity_mapping.items() if possible_activity in value]
-                
-    #             for agent_id in capable_agents:
-    #                 agent_availability = self.model.agents_busy_until.get(agent_id, self.model.params['start_timestamp'])
-    #                 start_time = max(case.current_timestamp, agent_availability)
-                    
-    #                 activity_duration_dist = self.model.activity_durations_dict[agent_id][possible_activity]
-    #                 work_duration_seconds = activity_duration_dist.mean
-
-    #                 agent_calendar = self.model.calendars.get(agent_id)
-    #                 if agent_calendar and work_duration_seconds > 0:
-    #                     wall_clock_duration_seconds = agent_calendar.find_idle_time(start_time, work_duration_seconds)
-    #                     end_time = start_time + pd.Timedelta(seconds=wall_clock_duration_seconds)
-    #                 else:
-    #                     end_time = start_time + pd.Timedelta(seconds=work_duration_seconds)
-                    
-    #                 resource_name = self.model.resources[agent_id]
-    #                 cost_per_hour = agent_costs.get(resource_name, 0)
-    #                 task_cost = (work_duration_seconds / 3600) * cost_per_hour
-                    
-    #                 duration_for_score = (end_time - case.current_timestamp).total_seconds()
-    #                 normalized_time = min(1.0, duration_for_score / max_time)
-    #                 normalized_cost = min(1.0, task_cost / max_cost)
-    #                 progress_score = progress_scores.get(possible_activity, 0)
-                    
-    #                 total_score = (weights.get('time', 0.0) * normalized_time) + \
-    #                               (weights.get('progress', 0.0) * (1 - progress_score)) + \
-    #                               (weights.get('cost', 0.0) * normalized_cost)
-
-    #                 if total_score < best_choice['score']:
-    #                     best_choice = {'activity': possible_activity, 'agent_id': agent_id, 'score': total_score}
-            
-    #         if best_choice['activity'] is None:
-    #             next_activity = 'zzz_end'
-    #         else:
-    #             next_activity = best_choice['activity']
-    #             chosen_agent_id = best_choice['agent_id']
-
-    #         if next_activity == 'zzz_end': return None, True
-    #         self.new_activity_index = self.activities.index(next_activity)
-    #         return [9999, chosen_agent_id], False
-
-    #     else: # Default simulation behavior
-    #         next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
-    #         if next_activity == 'zzz_end': return None, True
-    #         self.new_activity_index = self.activities.index(next_activity)
-    #         potential_agents = [key for key, value in self.agent_activity_mapping.items() if next_activity in value]
-    #         potential_agents.insert(0, 9999)
-    #         return potential_agents, False
-
-
     def get_potential_agents(self, case):
-        """
-        Finds the single best (activity, agent) pair to execute next by
-        holistically evaluating every possible combination based on a weighted score
-        of progress, task cost, and waiting cost.
-        """
         self.case = case
         case_ended = False
 
-        # Handle the very first activity in a case
         if case.get_last_activity() is None:
             next_activity = self.sample_starting_activity()
-            # For the first activity, we don't optimize the agent choice,
-            # we let the original mechanism handle it.
             potential_agents = [key for key, value in self.agent_activity_mapping.items() if next_activity in value]
-            potential_agents.insert(0, 9999)
+            if potential_agents:
+                # For the first activity, add the chosen agent to the sets
+                # Here we just pick the first available one as a simple heuristic
+                first_agent = self.sort_agents_by_availability(potential_agents)[0]
+                case.agents_involved.add(first_agent)
+                self.model.globally_used_agents.add(first_agent)
+                potential_agents = [9999, first_agent]
+            else:
+                potential_agents.insert(0, 9999)
+
             self.new_activity_index = self.activities.index(next_activity)
             return potential_agents, False
 
-        # --- Get the list of possible next activities based on the process model ---
         prefix = self.case.activities_performed
         activity_list, probabilities = None, None
         
@@ -297,78 +201,82 @@ class ContractorAgent(Agent):
                 activity_list = list(self.transition_probabilities[tuple(prefix)][self.case.previous_agent].keys())
                 probabilities = list(self.transition_probabilities[tuple(prefix)][self.case.previous_agent].values())
 
-        # If no path forward is found, end the case
         if not activity_list:
             return None, True
 
-        # ===== DECISION LOGIC: HOLISTIC OPTIMIZATION OR DEFAULT SIMULATION =====
         if self.model.params.get('execution_type') == 'greedy_optimize':
             
-            # --- Retrieve all necessary optimizer parameters from the model ---
+            weights = self.model.params.get('optimizer_weights', {})
+            # Retrieve all normalization factors and penalties
             progress_scores = self.model.params.get('activity_progress_scores', {})
             agent_costs = self.model.params.get('agent_costs', {})
             max_task_cost = self.model.params.get('max_task_cost', 1.0)
             cost_of_delay_per_hour = self.model.params.get('cost_of_delay_per_hour', 0)
             max_wait_cost = self.model.params.get('max_wait_cost', 1.0)
-            weights = self.model.params.get('optimizer_weights', {})
+            max_load_seconds = self.model.params.get('max_load_seconds', 1.0)
+            new_to_case_penalty = self.model.params.get('new_to_case_penalty', 0)
+            new_to_process_penalty = self.model.params.get('new_to_process_penalty', 0)
 
             best_choice = {'activity': None, 'agent_id': None, 'score': float('inf')}
 
-            # === HOLISTIC EVALUATION LOOP: Iterate through every possible (activity, agent) pair ===
             for possible_activity in activity_list:
-                if possible_activity == 'zzz_end':
-                    continue
-                
+                if possible_activity == 'zzz_end': continue
                 capable_agents = [key for key, value in self.agent_activity_mapping.items() if possible_activity in value]
                 
                 for agent_id in capable_agents:
-                    # --- Explicitly calculate each component of the score for this specific pair ---
-                    
-                    # 1. Calculate Wait Time and Wait Cost
+                    # --- Calculate all score components for the (activity, agent) pair ---
                     agent_availability = self.model.agents_busy_until.get(agent_id, self.model.params['start_timestamp'])
-                    wait_duration_seconds = max(0, (agent_availability - case.current_timestamp).total_seconds())
-                    wait_cost = (wait_duration_seconds / 3600) * cost_of_delay_per_hour
-                    normalized_wait_cost = min(1.0, wait_cost / max_wait_cost) if max_wait_cost > 0 else 0
+                    work_duration_seconds = self.model.activity_durations_dict[agent_id][possible_activity].mean
 
-                    # 2. Calculate Task Cost (cost of the work itself)
-                    activity_duration_dist = self.model.activity_durations_dict[agent_id][possible_activity]
-                    work_duration_seconds = activity_duration_dist.mean
+                    # 1. Progress Score
+                    progress_score = 1 - progress_scores.get(possible_activity, 0)
+                    
+                    # 2. Task Cost
                     resource_name = self.model.resources[agent_id]
                     cost_per_hour = agent_costs.get(resource_name, 0)
                     task_cost = (work_duration_seconds / 3600) * cost_per_hour
                     normalized_task_cost = min(1.0, task_cost / max_task_cost) if max_task_cost > 0 else 0
 
-                    # 3. Calculate Progress Score
-                    progress_score = progress_scores.get(possible_activity, 0)
-                    
-                    # --- Combine into the final score using flexible weights ---
-                    total_score = (weights.get('progress', 0.0) * (1 - progress_score)) + \
-                                  (weights.get('task_cost', 0.0) * normalized_task_cost) + \
-                                  (weights.get('wait_cost', 0.0) * normalized_wait_cost)
+                    # 3. Wait Cost
+                    wait_duration_seconds = max(0, (agent_availability - case.current_timestamp).total_seconds())
+                    wait_cost = (wait_duration_seconds / 3600) * cost_of_delay_per_hour
+                    normalized_wait_cost = min(1.0, wait_cost / max_wait_cost) if max_wait_cost > 0 else 0
 
-                    # If this pair has the best score so far, record it
+                    # 4. Load Cost
+                    load_seconds = wait_duration_seconds # Load is also based on how long until the agent is free
+                    normalized_load_cost = min(1.0, load_seconds / max_load_seconds) if max_load_seconds > 0 else 0
+
+                    # 5. Resource Minimization Costs (the new heuristics)
+                    new_to_case_cost = 1.0 if agent_id not in case.agents_involved else 0.0
+                    new_to_process_cost = 1.0 if agent_id not in self.model.globally_used_agents else 0.0
+                    
+                    # Combine into the final score
+                    total_score = (weights.get('progress', 0.0) * progress_score) + \
+                                  (weights.get('task_cost', 0.0) * normalized_task_cost) + \
+                                  (weights.get('wait_cost', 0.0) * normalized_wait_cost) + \
+                                  (weights.get('load', 0.0) * normalized_load_cost) + \
+                                  (weights.get('new_to_case', 0.0) * new_to_case_penalty * new_to_case_cost) + \
+                                  (weights.get('new_to_process', 0.0) * new_to_process_penalty * new_to_process_cost)
+
                     if total_score < best_choice['score']:
                         best_choice = {'activity': possible_activity, 'agent_id': agent_id, 'score': total_score}
             
-            # --- After checking all pairs, commit to the best one found ---
             if best_choice['activity'] is None:
                 next_activity = 'zzz_end'
             else:
                 next_activity = best_choice['activity']
                 chosen_agent_id = best_choice['agent_id']
+                # Add the chosen agent to the tracking sets
+                case.agents_involved.add(chosen_agent_id)
+                self.model.globally_used_agents.add(chosen_agent_id)
                 
-            if next_activity == 'zzz_end': 
-                return None, True
-
+            if next_activity == 'zzz_end': return None, True
             self.new_activity_index = self.activities.index(next_activity)
-            # Return a list with ONLY the chosen agent for the scheduler to use
             return [9999, chosen_agent_id], False
 
-        else: # Default simulation behavior (remains unchanged)
+        else: # Default simulation behavior
             next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
-            if next_activity == 'zzz_end': 
-                return None, True
-            
+            if next_activity == 'zzz_end': return None, True
             self.new_activity_index = self.activities.index(next_activity)
             potential_agents = [key for key, value in self.agent_activity_mapping.items() if next_activity in value]
             potential_agents.insert(0, 9999)

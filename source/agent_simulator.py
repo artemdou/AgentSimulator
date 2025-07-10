@@ -10,7 +10,14 @@ class AgentSimulator:
         self.params = params
 
         if 'optimizer_weights' not in self.params:
-            self.params['optimizer_weights'] = {'progress': 0, 'cost': 0.5, 'wait_cost': 0.5}
+            self.params['optimizer_weights'] = {
+                'progress': 0.1,
+                'task_cost': 0.3,
+                'wait_cost': 0.2,
+                'load': 0.2,
+                'new_to_case': 0.2,
+                'new_to_process': 0.0
+            }
 
 
     def execute_pipeline(self):
@@ -30,7 +37,7 @@ class AgentSimulator:
         )
         self.simulation_parameters['execution_type'] = self.params['execution_type']
 
-             # ===== START OF NEW LOGIC =====
+        # ===== START OF NEW LOGIC =====
         # If we are in optimization mode, discover the progress-based scoring parameters
         if self.params['execution_type'] == 'greedy_optimize':
             print("Discovering progress-based scoring parameters for optimization...")
@@ -48,7 +55,7 @@ class AgentSimulator:
             print(f"  - Discovered progress scores for {len(activity_progress_scores)} activities.")
             print(activity_progress_scores)
 
-            # # 2. Calculate Normalization Factor for Time
+            # # 2. Calculate Normalization Factors
             # df_temp['duration_seconds'] = (pd.to_datetime(df_temp['end_timestamp']) - pd.to_datetime(df_temp['start_timestamp'])).dt.total_seconds()
             # # Use the 95th percentile as a robust "max time" to avoid outliers
             # max_time_per_step = df_temp['duration_seconds'].quantile(0.95)
@@ -73,6 +80,18 @@ class AgentSimulator:
                 max_wait_cost = (max_wait_seconds / 3600) * self.simulation_parameters['cost_of_delay_per_hour']
                 self.simulation_parameters['max_wait_cost'] = max_wait_cost if max_wait_cost > 0 else 1.0
                 print(f"  - Set max_wait_cost for normalization to {self.simulation_parameters['max_wait_cost']:.2f}.")
+
+            # ===== START: NEW LOAD BALANCING DISCOVERY LOGIC =====
+            # We need a normalization factor for agent load.
+            # A good proxy for "max load" is the duration of a long-running case.
+            case_durations = df_temp.groupby('case_id').apply(
+                lambda x: (x['end_timestamp'].max() - x['start_timestamp'].min()).total_seconds()
+            )
+            # Use the 95th percentile as a robust "max load" to avoid outliers
+            max_load_seconds = case_durations.quantile(0.95)
+            self.simulation_parameters['max_load_seconds'] = max_load_seconds if max_load_seconds > 0 else 1.0
+            print(f"  - Set max_load_seconds for normalization to {self.simulation_parameters['max_load_seconds'] / 3600:.2f} hours.")
+            # ===== END: NEW LOAD BALANCING DISCOVERY LOGIC =====
 
 
             # 3. Pass agents' hourly costs
