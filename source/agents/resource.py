@@ -29,8 +29,12 @@ class ResourceAgent(Agent):
             self.contractor_agent.current_activity_index = self.contractor_agent.new_activity_index
             activity = self.contractor_agent.activities[self.contractor_agent.current_activity_index]
             current_timestamp = current_timestamp
+            
 
             activity_duration = self.contractor_agent.get_activity_duration(self.resource, activity)
+            if activity_duration is None or not isinstance(activity_duration, (int, float)):
+                print(f"⚠️ Invalid duration for agent {self.resource}, activity {activity}: {activity_duration}")
+                return
 
             self.perform_task(current_timestamp, activity_duration, activity, last_possible_agent, perform_multitask=perform_multitask)
 
@@ -390,3 +394,34 @@ class ResourceAgent(Agent):
                     )
         
         return current_time
+    
+
+    def generate_proposals(self, case, available_activities):
+        """
+        Returns a list of feasible proposals for this agent on the given case.
+        Each proposal is a dict containing: agent, activity, start, end.
+        """
+        proposals = []
+
+        for activity in available_activities:
+            if activity not in self.model.activity_durations_dict[self.resource]:
+                continue
+
+            duration = self.contractor_agent.get_activity_duration(self.resource, activity)
+            start = case.current_timestamp
+            end = start + pd.Timedelta(seconds=duration)
+
+            if self.is_occupied(start, duration):
+                continue
+
+            if not self.is_within_calendar(start, duration):
+                continue
+
+            proposals.append({
+                "agent": self.resource,
+                "activity": activity,
+                "start": start,
+                "end": end
+            })
+
+        return proposals

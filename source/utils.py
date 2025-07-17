@@ -61,3 +61,4 @@ def sample_from_distribution(distribution):
         sample = [distribution.mean] * 1
 
     return sample[0]
+

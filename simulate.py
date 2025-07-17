@@ -1,7 +1,7 @@
 import argparse
 import warnings
 
-from source.agent_simulator import AgentSimulator
+from source.agent_simulator import AgentSimulator, AgentSimulatorGreedy
 def parse_arguments():
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(description='Process event log parameters')
@@ -25,8 +25,8 @@ def parse_arguments():
 
     # Simulation parameters
     parser.add_argument('--num_simulations', type=int, default=10, help='Number of simulations to run')
-    parser.add_argument('--execution_type', choices=['random', 'original'], default='original',
-                    help="Execution mode: 'random' disables learned transition probabilities")
+    parser.add_argument('--execution_type', choices=['greedy', 'original'], default='original',
+                    help="Sets the execution mode")
 
     
     args = parser.parse_args()
@@ -65,8 +65,34 @@ if __name__ == "__main__":
         'train_and_test': train_and_test,
         'column_names': column_names,
         'num_simulations': args.num_simulations,
-        'execution_type': args.execution_type
+        'execution_type': args.execution_type,
+        'agent_costs': {
+                "Clerk-000006": 90,
+                "Clerk-000001": 30,
+                "Applicant-000001": 0,
+                "Clerk-000007": 30,
+                "Clerk-000004": 90,
+                "Clerk-000003": 60,
+                "Clerk-000008": 30,
+                "Senior Officer-000002": 150,
+                "Appraiser-000002": 90,
+                "AML Investigator-000002": 110,
+                "Appraiser-000001": 90,
+                "Loan Officer-000002": 95,
+                "AML Investigator-000001": 110,
+                "Loan Officer-000001": 95,
+                "Loan Officer-000004": 105,
+                "Clerk-000002": 30,
+                "Loan Officer-000003": 105,
+                "Senior Officer-000001": 150,
+                "Clerk-000005": 90
+                },
+        'cost_of_delay_per_hour': 500,
     }
 
-    simulator = AgentSimulator(params)
+    if params.get('execution_type') == 'greedy':
+        simulator = AgentSimulatorGreedy(params)
+        print("-- Begining Greedy Selection --")
+    else:
+        simulator = AgentSimulator(params)
     simulator.execute_pipeline()

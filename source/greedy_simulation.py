@@ -3,12 +3,12 @@ from mesa import Agent, Model
 from mesa.time import BaseScheduler
 from mesa.datacollection import DataCollector
 
-from source.agents.contractor import ContractorAgent
+from source.agents.contractor import GreedyContractorAgent
 from source.agents.resource import ResourceAgent
 from source.utils import store_simulated_log
 
 
-def simulate_process(df_train, simulation_parameters, data_dir, num_simulations):
+def simulate_process_greedy(df_train, simulation_parameters, data_dir, num_simulations):
     start_timestamp = simulation_parameters['case_arrival_times'][0]
     simulation_parameters['start_timestamp'] = start_timestamp
     simulation_parameters['case_arrival_times'] = simulation_parameters['case_arrival_times'][1:]
@@ -91,7 +91,7 @@ class BusinessProcessModel(Model):
         self.central_orchestration = simulation_parameters['central_orchestration']
         self.discover_parallel_work = False
         self.schedule = MyScheduler(self,)
-        self.contractor_agent = ContractorAgent(unique_id=9999, 
+        self.contractor_agent = GreedyContractorAgent(unique_id=9999, 
                                                 model=self, 
                                                 activities=activities, 
                                                 transition_probabilities=simulation_parameters['transition_probabilities'], 
