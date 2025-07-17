@@ -1,7 +1,7 @@
 import argparse
 import warnings
 
-from source.agent_simulator import AgentSimulator
+from source.agent_simulator import AgentSimulator, AgentSimulatorGreedy
 def parse_arguments():
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(description='Process event log parameters')
@@ -25,7 +25,7 @@ def parse_arguments():
 
     # Simulation parameters
     parser.add_argument('--num_simulations', type=int, default=10, help='Number of simulations to run')
-    parser.add_argument('--execution_type', choices=['greedy_optimize', 'original'], default='original',
+    parser.add_argument('--execution_type', choices=['greedy', 'original'], default='original',
                     help="Sets the execution mode")
 
     
@@ -90,5 +90,9 @@ if __name__ == "__main__":
         'cost_of_delay_per_hour': 500,
     }
 
-    simulator = AgentSimulator(params)
+    if params.get('execution_type') == 'greedy':
+        simulator = AgentSimulatorGreedy(params)
+        print("-- Begining Greedy Selection --")
+    else:
+        simulator = AgentSimulator(params)
     simulator.execute_pipeline()
