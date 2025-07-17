@@ -6,7 +6,7 @@ import scipy.stats as st
 import time
 import pandas as pd
 
-class ContractorAgent(Agent):
+class GreedyContractorAgent(Agent):
     """
     One contractor agent to assign tasks using the contraction net protocol
     """
