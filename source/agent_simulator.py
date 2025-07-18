@@ -11,15 +11,17 @@ class AgentSimulatorGreedy:
     def __init__(self, params):
         self.params = params
 
-        if 'optimizer_weights' not in self.params:
-            self.params['optimizer_weights'] = {
-                'progress': 0.1,
-                'task_cost': 0.3,
-                'wait_cost': 0.2,
-                'load': 0.2,
-                'new_to_case': 0.2,
-                'new_to_process': 0.0
-            }
+        # This makes it fully configurable from the outside.
+        default_weights = {
+            'progress': 0.1,
+            'task_cost': 0.3,
+            'wait_cost': 0.2,
+            'load': 0.2,
+            'new_to_case': 0.2,
+            'new_to_process': 0.0
+        }
+        # The user can now pass 'optimizer_weights' in the params dict.
+        self.params['optimizer_weights'] = self.params.get('optimizer_weights', default_weights)
 
 
     def execute_pipeline(self):

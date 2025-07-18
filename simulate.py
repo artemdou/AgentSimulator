@@ -27,6 +27,7 @@ def parse_arguments():
     parser.add_argument('--num_simulations', type=int, default=10, help='Number of simulations to run')
     parser.add_argument('--execution_type', choices=['greedy', 'original'], default='original',
                     help="Sets the execution mode")
+    parser.add_argument('--weights', type=str, default='{}', help='JSON string of optimizer weights')
 
     
     args = parser.parse_args()

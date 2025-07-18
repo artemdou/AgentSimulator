@@ -441,7 +441,6 @@ class ContractorAgent(Agent):
                             getattr(scheduler._agents[inner_key], method)(last_possible_agent, 
                                                                           parallel_activity=True, current_timestamp=current_timestamp, perform_multitask=perform_multitask)
         else:
-            print("Normal Contractor")
             for agent_key in sorted_agent_keys:
                 if agent_key == sorted_agent_keys[-1]:
                     last_possible_agent = True
