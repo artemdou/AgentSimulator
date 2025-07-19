@@ -620,9 +620,6 @@ def decision_point_crossover(ind1, ind2):
     return child1, child2
 
 # --- NEW, GENERALIZED MUTATION OPERATORS ---
-
-# --- CORRECTED: Generalized Guided Mutation ---
-# --- DEFINITIVE FIX: Generalized Guided Mutation ---
 def guided_mutate(individual_policy_dict, base_sim_params, selected_objectives, indpb=0.3):
     """
     A generalized 'intelligent' mutation. It picks one of the selected optimization
