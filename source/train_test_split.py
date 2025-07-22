@@ -33,11 +33,13 @@ def trainTestSplit(df, test_len=0.3, one_timestamp=False):
     # Incomplete final traces
     df_train = df_train.sort_values(by=['case_id', 'pos_trace'],
                                     ascending=True)
+
     inc_traces = pd.DataFrame(df_train.groupby('case_id')
                                 .last()
                                 .reset_index())
     inc_traces = inc_traces[inc_traces.pos_trace != inc_traces.trace_len]
     inc_traces = inc_traces['case_id'].to_list()
+
 
     # Drop incomplete traces
     df_test = df_test[~df_test.case_id.isin(inc_traces)]
@@ -81,6 +83,7 @@ def split_data(PATH_LOG, column_names, PATH_LOG_test=None):
     # inform about number of cases
     print(f"The train log conisists of {len(set(df_train_big['case_id']))} cases")
     # print(f"The val log conisists of {len(set(df_val['case_id']))} cases")
+    print(f"COlumns: {df_test.columns}")
     print(f"The test log conisists of {len(set(df_test['case_id']))} cases")
 
     number_test_cases = len(set(df_test['case_id']))

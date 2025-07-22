@@ -30,23 +30,22 @@ def compute_activity_transition_dict(business_process_data):
     sequence_parts, next_act, active_agent = create_labeled_sequences(sequences, active_agents)
 
     # Initialize a nested dictionary to store transition probabilities per agent
-    # nested dict of: prefix → agent → next activity → probability
     dict_ = {}
 
     for i in range(len(next_act)):
-        # Extract the agent of the current sequence part
+        # Skip if the current sequence ends in 'zzz_end'
+        if sequence_parts[i][-1] == 'zzz_end':
+            continue
+
         agent = active_agent[i]
 
-        # Check if the sequence part exists in the dictionary
-        if sequence_parts[i] not in dict_.keys():
+        if sequence_parts[i] not in dict_:
             dict_[sequence_parts[i]] = {agent: {next_act[i]: 1}}
         else:
-            # Check if the agent exists for the sequence part
-            if agent not in dict_[sequence_parts[i]].keys():
+            if agent not in dict_[sequence_parts[i]]:
                 dict_[sequence_parts[i]][agent] = {next_act[i]: 1}
             else:
-                # Check if the next activity exists for the agent
-                if next_act[i] not in dict_[sequence_parts[i]][agent].keys():
+                if next_act[i] not in dict_[sequence_parts[i]][agent]:
                     dict_[sequence_parts[i]][agent][next_act[i]] = 1
                 else:
                     dict_[sequence_parts[i]][agent][next_act[i]] += 1
@@ -55,10 +54,11 @@ def compute_activity_transition_dict(business_process_data):
     for seq_part, agents in dict_.items():
         for agent, transitions in agents.items():
             sum_values = sum(transitions.values())
-            for key, value in transitions.items():
-                transitions[key] = value / sum_values
+            for key in transitions:
+                transitions[key] /= sum_values
 
     return dict_
+
 
 # Function to create sequences of activities for each case
 def create_sequences(df):

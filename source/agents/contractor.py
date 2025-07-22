@@ -480,6 +480,9 @@ class ContractorAgent(Agent):
 
     def get_activity_duration(self, agent, activity):
         activity_distribution = self.model.activity_durations_dict[agent][activity]
+        if not activity_distribution:
+            return 0
+
         if activity_distribution.type.value == "expon":
             scale = activity_distribution.mean - activity_distribution.min
             if scale < 0.0:

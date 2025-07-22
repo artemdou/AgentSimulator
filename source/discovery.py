@@ -246,8 +246,9 @@ def _compute_activity_duration_distribution(df, res_calendars, roles):
     #             print(f"agent: {agent}, activity: {activity}, mean: {np.mean(durations)}, std: {np.std(durations)}")
     
     # x=y
-
     return act_durations
+
+from source.arrival_distribution import get_best_fitting_distribution, DurationDistribution
 
 def compute_activity_duration_distribution_per_agent(df_train, res_calendars, roles):
     """
@@ -255,6 +256,8 @@ def compute_activity_duration_distribution_per_agent(df_train, res_calendars, ro
 
     Args:
         df_train: Event log in pandas format
+        res_calendars: resource calendars
+        roles: role definitions
 
     Returns:
         dict: A dict storing for each agent the distribution for each activity.
@@ -263,8 +266,8 @@ def compute_activity_duration_distribution_per_agent(df_train, res_calendars, ro
 
     agents = activity_durations_dict.keys()
     activities = []
-    for k,v in activity_durations_dict.items():
-        for kk, vv in v.items():
+    for k, v in activity_durations_dict.items():
+        for kk in v.keys():
             activities.append(kk)
     activities = set(activities)
 
@@ -279,8 +282,12 @@ def compute_activity_duration_distribution_per_agent(df_train, res_calendars, ro
                     outlier_threshold=20.0,
                 )
                 act_duration_distribution_per_agent[agent][act] = duration_distribution
+            else:
+                # Fallback: assign a fixed zero-duration distribution
+                act_duration_distribution_per_agent[agent][act] = DurationDistribution("fix", mean=0.0)
 
     return act_duration_distribution_per_agent
+
 
 def activities_with_zero_waiting_time(df, threshold=0.99):
     """
