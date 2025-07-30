@@ -285,6 +285,399 @@ class GreedyContractorAgent(Agent):
 
 class ContractorAgent(Agent):
     """
+    One contractor agent to assign tasks using a probability-first,
+    availability-second triage approach.
+    """
+    def __init__(self, unique_id, model, activities, transition_probabilities, agent_activity_mapping):
+        super().__init__(unique_id, model)
+        self.activities = activities
+        self.transition_probabilities = transition_probabilities
+        self.agent_activity_mapping = agent_activity_mapping
+        self.model = model
+        self.current_activity_index = None
+        self.activity_performed = False
+
+    def _get_ranked_agents_by_probability(self, list_of_agents):
+        """
+        Ranks a list of capable agents based on transition probability.
+        Falls back to a random shuffle if no probabilities are defined.
+        """
+        if not list_of_agents:
+            return []
+
+        # Fallback for orchestrated mode, first activity, or unknown transitions
+        if self.model.central_orchestration or self.case.previous_agent == -1:
+            random.shuffle(list_of_agents)
+            return list_of_agents
+
+        current_agent = self.case.previous_agent
+        current_activity = self.case.activities_performed[-1]
+        next_activity = self.activities[self.new_activity_index]
+
+        # Get probabilities for each agent
+        agent_probabilities = {}
+        for agent in list_of_agents:
+            prob = (self.model.agent_transition_probabilities
+                    .get(current_agent, {})
+                    .get(current_activity, {})
+                    .get(agent, {})
+                    .get(next_activity, 0.0))
+            agent_probabilities[agent] = prob
+
+        # Sort agents by their probability, descending.
+        # Agents with 0 probability will be at the end.
+        sorted_agents = sorted(list_of_agents, key=lambda agent: agent_probabilities.get(agent, 0.0), reverse=True)
+        
+        return sorted_agents
+
+    def step(self, scheduler, agent_keys, cases):
+        method = "step"
+        potential_agents = agent_keys[1:]
+
+        if not potential_agents:
+            self.activity_performed = False
+            return
+
+        def _handle_agent_group(agent_group, is_parallel):
+            if not agent_group: return
+            
+            # Rank agents based on probability
+            ranked_agents = self._get_ranked_agents_by_probability(agent_group)
+            
+            # If all probabilities were 0, fallback to sorting by availability
+            # to ensure the case waits for the soonest-available agent.
+            all_probs_zero = all(
+                (self.model.agent_transition_probabilities
+                    .get(self.case.previous_agent, {})
+                    .get(self.case.activities_performed[-1] if self.case.activities_performed else '', {})
+                    .get(agent, {})
+                    .get(self.activities[self.new_activity_index], 0.0)) == 0.0
+                for agent in ranked_agents
+            )
+            if all_probs_zero and not self.model.central_orchestration:
+                 ranked_agents = self.sort_agents_by_availability(ranked_agents)
+
+
+            # Iterate through the ranked list to find an available agent
+            for i, agent_id in enumerate(ranked_agents):
+                if self.activity_performed:
+                    break
+
+                # The last agent in the list is the final resort.
+                last_possible_agent = (i == len(ranked_agents) - 1)
+
+                if agent_id in scheduler._agents:
+                    current_timestamp = self.get_current_timestamp(agent_id, parallel_activity=is_parallel)
+                    getattr(scheduler._agents[agent_id], method)(
+                        last_possible_agent=last_possible_agent,
+                        parallel_activity=is_parallel,
+                        current_timestamp=current_timestamp,
+                        perform_multitask=False
+                    )
+
+        # Handle parallel gateways (list of lists) or standard sequential tasks (list)
+        if isinstance(potential_agents[0], list):
+            for agent_group in potential_agents:
+                if self.activity_performed:
+                    break
+                _handle_agent_group(agent_group, is_parallel=True)
+        else:
+            _handle_agent_group(potential_agents, is_parallel=False)
+
+        self.activity_performed = False
+
+    def sort_agents_by_availability(self, agent_keys):
+        """Sorts a list of agents by their 'busy_until' timestamp."""
+        if not agent_keys:
+            return []
+        return sorted(agent_keys, key=lambda x: self.model.agents_busy_until.get(x, pd.Timestamp.min))
+    
+    
+    def get_current_timestamp(self, agent_id, parallel_activity=False):
+        if parallel_activity == False:
+            current_timestamp = self.case.current_timestamp
+        else:
+            current_timestamp = self.case.timestamp_before_and_gateway
+
+        return current_timestamp
+
+
+    def get_activity_duration(self, agent, activity):
+        activity_distribution = self.model.activity_durations_dict[agent][activity]
+        if not activity_distribution:
+            return 0
+
+        if activity_distribution.type.value == "expon":
+            scale = activity_distribution.mean - activity_distribution.min
+            if scale < 0.0:
+                print("Warning! Trying to generate EXPON sample with 'mean' < 'min', using 'mean' as scale value.")
+                scale = activity_distribution.mean
+            activity_duration = st.expon.rvs(loc=activity_distribution.min, scale=scale, size=1)[0]
+        elif activity_distribution.type.value == "gamma":
+            activity_duration = st.gamma.rvs(
+                pow(activity_distribution.mean, 2) / activity_distribution.var,
+                loc=0,
+                scale=activity_distribution.var / activity_distribution.mean,
+                size=1,
+            )[0]
+        elif activity_distribution.type.value == "norm":
+            activity_duration = st.norm.rvs(loc=activity_distribution.mean, scale=activity_distribution.std, size=1)[0]
+        elif activity_distribution.type.value == "uniform":
+            activity_duration = st.uniform.rvs(loc=activity_distribution.min, scale=activity_distribution.max - activity_distribution.min, size=1)[0]
+        elif activity_distribution.type.value == "lognorm":
+            pow_mean = pow(activity_distribution.mean, 2)
+            phi = math.sqrt(activity_distribution.var + pow_mean)
+            mu = math.log(pow_mean / phi)
+            sigma = math.sqrt(math.log(phi ** 2 / pow_mean))
+            activity_duration = st.lognorm.rvs(sigma, loc=0, scale=math.exp(mu), size=1)[0]
+        elif activity_distribution.type.value == "fix":
+            activity_duration = activity_distribution.mean
+
+        return activity_duration
+    
+    def sample_starting_activity(self):
+        """
+        Sample the activity that starts the case based on the frequency of starting activities in the train log
+        """
+        
+        # Cache the start activities if not already cached
+        if not hasattr(self, '_start_activities_dist'):
+            # Get first activity for each case more efficiently
+            df = self.model.data
+            # Sort once and get first activity for each case
+            first_activities = (df.sort_values(['case_id', 'start_timestamp', 'end_timestamp'])
+                            .groupby('case_id')['activity_name']
+                            .first())
+            
+            # Handle Start/start cases
+            if "Start" in first_activities.values or "start" in first_activities.values:
+                self._start_activities_dist = ("Start" if "Start" in first_activities.values else "start", None)
+            else:
+                # Calculate frequencies
+                total_cases = len(df['case_id'].unique())
+                start_count = first_activities.value_counts() / total_cases
+                self._start_activities_dist = (list(start_count.index), list(start_count.values))
+
+        # Use cached distribution
+        activities, weights = self._start_activities_dist
+        if isinstance(activities, str):  # Handle Start/start case
+            sampled_activity = activities
+        else:
+            sampled_activity = random.choices(activities, weights=weights, k=1)[0]
+        
+        return sampled_activity
+    
+    def check_for_other_possible_next_activity(self, next_activity):
+        possible_other_next_activities = []
+        for key, value in self.model.prerequisites.items():
+            for i in range(len(value)):
+                # if values is a single list, then only ONE of the entries must have been performed already (XOR gateway)
+                if not isinstance(value[i], list):
+                    if value[i] == next_activity:
+                        possible_other_next_activities.append(key)
+                # if value contains sublists, then all of the values in the sublist must have been performed (AND gateway)
+                else:
+                    # if current next_activity contained in prerequisites
+                    if any(next_activity in sublist for sublist in value[i]):
+                        # if all prerequisites are fulfilled
+                        if all(value_ in self.case.activities_performed for value_ in value[i]):
+                            possible_other_next_activities.append(key)
+
+        return possible_other_next_activities
+    
+
+    def check_if_all_preceding_activities_performed(self, activity):
+        print(f"activities_performed: {self.case.activities_performed}")
+        print(f"prerequisites: {self.model.prerequisites}")
+        print(f"activity: {activity}")
+        for key, value in self.model.prerequisites.items():
+            if activity == key:
+                if all(value_ in self.case.activities_performed for value_ in value):
+                    return True
+        return False
+    
+    def get_potential_agents(self, case):
+        """
+        check if there already happened activities in the current case
+            if no: current activity is usual start activity
+            if yes: current activity is the last activity of the current case
+        """
+        self.case = case
+        # print(f"case: {case.case_id}")
+        case_ended = False
+
+        current_timestamp = self.case.current_timestamp
+        # self.case.potential_additional_agents = []
+        # print(f"activities_performed: {self.case.activities_performed}")
+        # print(f"get last activity: {self.case.get_last_activity()}")
+
+        if case.get_last_activity() == None: # if first activity in case
+            # sample starting activity
+            sampled_start_act = self.sample_starting_activity()
+            current_act = sampled_start_act
+            self.new_activity_index = self.activities.index(sampled_start_act)
+            next_activity = sampled_start_act   
+            # print(f"start activity: {next_activity}")
+        else:
+            current_act = case.get_last_activity()
+            self.current_activity_index = self.activities.index(current_act)
+
+            prefix = self.case.activities_performed
+
+            if self.model.central_orchestration:
+                while tuple(prefix) not in self.transition_probabilities.keys():
+                    prefix = prefix[1:]
+                # Extract activities and probabilities
+                # print(self.transition_probabilities[tuple(prefix)])
+                activity_list = list(self.transition_probabilities[tuple(prefix)].keys())
+                probabilities = list(self.transition_probabilities[tuple(prefix)].values())
+
+
+                # original
+                # next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
+                # change
+                if self.model.params.get('execution_type', 'original') == 'random':
+                    possible_activities = [a for a in self.activities if a != 'zzz_end'] 
+                    next_activity = random.choice(possible_activities)
+                else:
+                    next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
+
+
+                # # Sample an activity based on the probabilities
+                # while True:
+                #     # print(f"activity_list: {activity_list}")
+                #     # print(f"probabilities: {probabilities}")
+                #     next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
+                #     # print(f"next_activity: {next_activity}")
+                #     if len(activity_list) > 1:
+                #         if self.check_if_all_preceding_activities_performed(next_activity):
+                #             # print("True")
+                #             break
+                #         else:
+                #             print(f"Not all preceding activities performed for {next_activity}")
+                #     else:
+                #         break
+                self.new_activity_index = self.activities.index(next_activity)
+            else:
+                while tuple(prefix) not in self.transition_probabilities.keys() or self.case.previous_agent not in self.transition_probabilities[tuple(prefix)].keys():
+                    prefix = prefix[1:]
+                # Extract activities and probabilities
+                # print(self.transition_probabilities[tuple(prefix)])
+                activity_list = list(self.transition_probabilities[tuple(prefix)][self.case.previous_agent].keys())
+                
+                probabilities = list(self.transition_probabilities[tuple(prefix)][self.case.previous_agent].values())
+                
+                # original
+                # next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
+                # change
+                if self.model.params.get('execution_type', 'original') == 'random':
+                    possible_activities = [a for a in self.activities if a != 'zzz_end'] 
+                    next_activity = random.choice(possible_activities)
+                else:
+                    next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
+
+
+                # # Sample an activity based on the probabilities
+                # time_0 = time.time()
+                # while True:
+                #     # print("get next activity")
+                #     # print(f"transition_probabilities: {self.transition_probabilities}")
+                #     # print(f"prefix: {prefix}")
+                #     # print(f"previous_agent: {self.case.previous_agent}")
+                #     # print(f"activity_list: {activity_list}")
+                #     # print(f"probabilities: {probabilities}")
+                #     next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
+                #     if len(activity_list) > 1:
+                #         if self.check_if_all_preceding_activities_performed(next_activity):
+                #             # print("True")
+                #             break
+                #         else:
+                #             print(f"Not all preceding activities performed for {next_activity}")
+                #     else:
+                #         break
+                # time_1 = time.time()
+                # print(f"duration: {time_1 - time_0}")
+                self.new_activity_index = self.activities.index(next_activity)
+
+            # print(f"current_act: {current_act}")
+            # print(f"next_activity: {next_activity}")
+            # print(self.model.prerequisites)
+
+
+            # check if next activity is zzz_end
+            if next_activity == 'zzz_end':
+                potential_agents = None
+                case_ended = True
+                return potential_agents, case_ended#, None, None
+            
+            if self.model.discover_parallel_work:
+                # check if next activity is allowed by looking at prerequisites
+                activity_allowed = False
+                for key, value in self.model.prerequisites.items():
+                    if next_activity == key:
+                        for i in range(len(value)):
+                            # if values is a single list, then only ONE of the entries must have been performed already (XOR gateway)
+                            if not isinstance(value[i], list):
+                                if value[i] in self.case.activities_performed:
+                                    activity_allowed = True
+                                    break
+                            # if value contains sublists, then all of the values in the sublist must have been performed (AND gateway)
+                            else:
+                                if all(value_ in self.case.activities_performed for value_ in value[i]):
+                                    activity_allowed = True
+                                    break
+                # if activity is not specified as prerequisite, additionally check if it is a parallel one to the last activity and thus actually can be performed
+                if activity_allowed == False:
+                    for i in range(len(self.model.parallel_activities)):
+                        if next_activity in self.model.parallel_activities[i]:
+                            if self.case.activities_performed[-1] in self.model.parallel_activities[i]:
+                                activity_allowed = True
+            else:
+                activity_allowed = True
+
+            # additionally check if new activity was already performed
+            number_occurence_of_next_activity = self.case.activities_performed.count(next_activity)
+            number_occurence_of_next_activity += 1 # add 1 as it would appear one more time in the next step
+            if number_occurence_of_next_activity > self.model.max_activity_count_per_case[next_activity]:
+                activity_allowed = False
+                # check if there is another possible activity that can be performed
+                # go through prerequisites and check for which act the current next_activity is a prerequisite for
+                # if it is one, then check if this other activity can be performed
+                possible_other_next_activities = self.check_for_other_possible_next_activity(next_activity)
+                if len(possible_other_next_activities) > 0:
+                    next_activity = random.choice(possible_other_next_activities)
+                    self.new_activity_index = self.activities.index(next_activity)
+                    # print(f"Changed next activity to {next_activity}")
+                    activity_allowed = True
+                    # check if next activity is zzz_end
+                    if next_activity == 'zzz_end':
+                        potential_agents = None
+                        case_ended = True
+                        return potential_agents, case_ended
+                # to avoid that simulation does not terminate
+                else:
+                    activity_allowed = True
+
+            if activity_allowed == False:
+                # print(f"case_id: {self.case.case_id}: Next activity {next_activity} not allowed from current activity {current_act} with history {self.case.activities_performed}")
+                # TODO: do something when activity is not allowed
+                potential_agents = None
+                return potential_agents, case_ended#, [], []
+            else:
+                pass
+                # print(f"case_id: {self.case.case_id}: Next activity {next_activity} IS ALLOWED from current activity {current_act} with history {self.case.activities_performed}")
+        
+        # check which agents can potentially perform the next task
+        potential_agents = [key for key, value in self.agent_activity_mapping.items() if any(next_activity == item for item in value)]
+        # also add contractor agent to list as he is always active
+        potential_agents.insert(0, 9999)
+
+
+        return potential_agents, case_ended
+    
+
+class OriginalContractorAgent(Agent):
+    """
     One contractor agent to assign tasks using the contraction net protocol
     """
     def __init__(self, unique_id, model, activities, transition_probabilities, agent_activity_mapping):
@@ -480,9 +873,6 @@ class ContractorAgent(Agent):
 
     def get_activity_duration(self, agent, activity):
         activity_distribution = self.model.activity_durations_dict[agent][activity]
-        if not activity_distribution:
-            return 0
-
         if activity_distribution.type.value == "expon":
             scale = activity_distribution.mean - activity_distribution.min
             if scale < 0.0:
@@ -641,17 +1031,7 @@ class ContractorAgent(Agent):
                 activity_list = list(self.transition_probabilities[tuple(prefix)].keys())
                 probabilities = list(self.transition_probabilities[tuple(prefix)].values())
 
-
-                # original
-                # next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
-                # change
-                if self.model.params.get('execution_type', 'original') == 'random':
-                    possible_activities = [a for a in self.activities if a != 'zzz_end'] 
-                    next_activity = random.choice(possible_activities)
-                else:
-                    next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
-
-
+                next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
                 # # Sample an activity based on the probabilities
                 # while True:
                 #     # print(f"activity_list: {activity_list}")
@@ -675,17 +1055,9 @@ class ContractorAgent(Agent):
                 activity_list = list(self.transition_probabilities[tuple(prefix)][self.case.previous_agent].keys())
                 
                 probabilities = list(self.transition_probabilities[tuple(prefix)][self.case.previous_agent].values())
+
+                next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
                 
-                # original
-                # next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
-                # change
-                if self.model.params.get('execution_type', 'original') == 'random':
-                    possible_activities = [a for a in self.activities if a != 'zzz_end'] 
-                    next_activity = random.choice(possible_activities)
-                else:
-                    next_activity = random.choices(activity_list, weights=probabilities, k=1)[0]
-
-
                 # # Sample an activity based on the probabilities
                 # time_0 = time.time()
                 # while True:
